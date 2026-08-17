@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message, CallbackQuery
 from aiogram import BaseMiddleware
@@ -13,7 +14,14 @@ from app.bot.handlers_user import router as user_router
 from app.payments.telegram import router as payments_router
 from app.parser.worker import main as parser_main
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    stream=sys.stderr,
+    force=True,
+)
+for _name in ("aiogram", "app.bot", "app.parser", "app.database"):
+    logging.getLogger(_name).setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -69,7 +77,11 @@ dp.callback_query.middleware(LoggingMiddleware())
 
 async def main():
     logger.info("Starting bot...")
-    await init_db()
+    try:
+        await init_db()
+    except Exception as e:
+        logger.exception("Database init failed: %s", e)
+        raise
     logger.info("Database initialized")
     
     async def _start_parser():
@@ -93,4 +105,9 @@ async def main():
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        logger.info("Bot entry point starting")
+        asyncio.run(main())
+    except Exception as e:
+        logger.exception("Bot entry point crashed: %s", e)
+        sys.exit(1)

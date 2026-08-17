@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+import sqlite3
 from typing import Dict, Optional
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -85,6 +86,19 @@ class TelethonClientManager:
                         await client.start()
                     except RPCError as e:
                         logger.warning("Session %s not authorized: %s", name, e)
+            except sqlite3.OperationalError as exc:
+                if "database is locked" in str(exc):
+                    logger.warning("Session %s locked, retrying connect: %s", name, exc)
+                    await asyncio.sleep(1)
+                    try:
+                        await client.connect()
+                        if not await client.is_user_authorized() and not session_string:
+                            await client.start()
+                    except Exception as retry_exc:
+                        logger.exception("Retry connect session %s failed: %s", name, retry_exc)
+                        raise
+                else:
+                    raise
             except Exception as e:
                 logger.exception("Failed to connect session %s: %s", name, e)
                 raise

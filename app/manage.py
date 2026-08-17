@@ -45,7 +45,11 @@ async def run_web():
 async def run_bot():
     mod = importlib.import_module('app.bot.main')
     if hasattr(mod, 'main'):
-        await mod.main()
+        try:
+            await mod.main()
+        except Exception as e:
+            print('BOT_CRASH:', e, flush=True)
+            raise
     else:
         print('No main() in app.bot.main')
 
