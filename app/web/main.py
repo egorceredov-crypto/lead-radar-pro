@@ -19,10 +19,11 @@ from pathlib import Path
 
 app = FastAPI(title="Lead Radar PRO Web")
 _static_dir = Path(__file__).resolve().parent / "static"
-if _static_dir.exists():
+try:
+    os.makedirs(_static_dir, exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
-else:
-    logger.warning("Static directory not found: %s", _static_dir)
+except Exception as exc:
+    logger.warning("StaticFiles mount skipped: %s", exc)
 templates = Jinja2Templates(directory="app/web/templates")
 
 
