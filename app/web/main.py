@@ -7,6 +7,7 @@ from app.database.session import AsyncSessionLocal
 from app.database.models import User, Lead, Message, Subscription, TelegramAccount, Payment
 from app.database.models import Source
 from app.parser.telethon_client import TelethonClientManager
+from app.services.users import auto_category
 from config import settings
 from telethon.errors import RPCError
 import logging
@@ -237,7 +238,8 @@ async def chats_add(request: Request):
         existing = await session.execute(Source.__table__.select().where(Source.chat_id == int(chat_id)))
         if existing.scalar_one_or_none():
             return {"ok": True, "message": "already exists"}
-        src = Source(user_id=None, type=chat_type, username=uname, chat_id=int(chat_id), title=title, status='active')
+        category = auto_category(title, uname)
+        src = Source(user_id=None, type=chat_type, username=uname, chat_id=int(chat_id), title=title, category=category, status='active')
         session.add(src)
         await session.flush()
         source_id = src.id

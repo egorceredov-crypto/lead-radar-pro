@@ -37,7 +37,7 @@ from app.bot.texts import (
 from app.services.users import (
     get_or_create_user, get_user, get_user_tariff_name, get_trial_end_text,
     get_keyword_limit, get_remaining_days, activate_subscription,
-    get_tariff_keyword_limit,
+    get_tariff_keyword_limit, auto_category,
 )
 from app.services.stats import get_user_stats
 from app.parser.telethon_client import TelethonClientManager
@@ -1313,6 +1313,8 @@ async def handle_text(message: Message):
                                 if dup:
                                     errors.append(f"{line}: уже добавлен")
                                     continue
+                                if not category:
+                                    category = auto_category(title, username)
                                 src = Source(
                                     type=chat_type,
                                     username=username,
