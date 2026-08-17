@@ -289,16 +289,23 @@ async def _historical_search_for_user(user: User, client, bot: Bot):
 
 async def _monitor_new_messages(client, bot: Bot):
     """Постоянный мониторинг новых сообщений во всех активных источниках."""
+    monitor_logger = logging.getLogger("app.parser.monitor")
+    monitor_logger.setLevel(logging.INFO)
+    
     async def handler(event):
         try:
             text = getattr(event.message, "message", None) or getattr(event.message, "text", None) or ""
             if not text:
+                monitor_logger.debug("Monitor: empty text, skipping")
                 return
 
             chat = await event.get_chat()
             chat_id = getattr(chat, "id", None)
             if chat_id is None:
+                monitor_logger.debug("Monitor: no chat_id, skipping")
                 return
+
+            monitor_logger.info("Monitor: new message in chat_id=%s, text=%s", chat_id, text[:100])
 
             chat_username = getattr(chat, "username", None)
             # Нормализуем chat_id: для каналов/супергрупп Telethon может добавлять префикс -100
@@ -319,7 +326,7 @@ async def _monitor_new_messages(client, bot: Bot):
                     query = query.where(Source.chat_id == normalized_chat_id)
                 source = (await session.execute(query)).scalar_one_or_none()
                 if not source:
-                    logger.debug("No active source for chat_id=%s, skipping", chat_id)
+                    monitor_logger.debug("Monitor: no active source for chat_id=%s username=%s, skipping", chat_id, chat_username)
                     return
 
                 users = (await session.execute(
@@ -342,12 +349,12 @@ async def _monitor_new_messages(client, bot: Bot):
                     if not matched:
                         continue
                     if await _has_stopword(text, user, s2):
-                        logger.debug("Stopword matched for user %s in chat %s", user.id, chat_id)
+                        monitor_logger.debug("Stopword matched for user %s in chat %s", user.id, chat_id)
                         continue
-                logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, getattr(user, 'id', user), getattr(source, 'id', source))
+                monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, getattr(user, 'id', user), getattr(source, 'id', source))
                 await _save_lead(user, source, chat, event.message, text, matched, bot)
         except Exception:
-            logger.exception("Monitor handler error")
+            monitor_logger.exception("Monitor handler error")
 
     client.add_event_handler(handler, events.NewMessage)
 

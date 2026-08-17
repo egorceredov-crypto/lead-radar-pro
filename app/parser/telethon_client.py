@@ -44,6 +44,9 @@ class TelethonClientManager:
         return None
 
     def list_sessions(self) -> list:
+        session_string = getattr(settings, "session_string", None)
+        if session_string:
+            return ["string_session"]
         owner = getattr(settings, 'owner_session', None)
         if owner:
             p = os.path.join(self.sessions_dir, owner)
