@@ -301,15 +301,22 @@ async def _monitor_new_messages(client, bot: Bot):
                 return
 
             chat_username = getattr(chat, "username", None)
+            # Нормализуем chat_id: для каналов/супергрупп Telethon может добавлять префикс -100
+            normalized_chat_id = chat_id
+            if isinstance(normalized_chat_id, int) and normalized_chat_id < 0 and str(abs(normalized_chat_id)).startswith("100"):
+                normalized_chat_id = int(str(abs(normalized_chat_id))[3:])
             # Находим источник (Source) по chat_id или username
             async with AsyncSessionLocal() as session:
                 query = select(Source).where(Source.status == "active")
                 if chat_username:
+                    normalized_username = chat_username.lstrip("@").lower()
                     query = query.where(
-                        (Source.chat_id == int(chat_id)) | (Source.username == chat_username)
+                        (Source.chat_id == normalized_chat_id) |
+                        (Source.username == normalized_username) |
+                        (Source.username == chat_username)
                     )
                 else:
-                    query = query.where(Source.chat_id == int(chat_id))
+                    query = query.where(Source.chat_id == normalized_chat_id)
                 source = (await session.execute(query)).scalar_one_or_none()
                 if not source:
                     logger.debug("No active source for chat_id=%s, skipping", chat_id)
