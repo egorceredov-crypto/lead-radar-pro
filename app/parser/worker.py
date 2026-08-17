@@ -374,6 +374,27 @@ async def main(bot=None):
     me = await client.get_me()
     logger.info("Connected Telethon as %s", getattr(me, "username", "?"))
 
+    # Проверка участия в активных источниках
+    try:
+        async with AsyncSessionLocal() as session:
+            sources = (await session.execute(
+                select(Source).where(Source.status == "active")
+            )).scalars().all()
+            missing = []
+            for src in sources:
+                try:
+                    entity = await client.get_entity(src.chat_id or src.username)
+                    if not getattr(entity, "id", None):
+                        missing.append(f"{src.id}:{src.title or src.username}")
+                except Exception:
+                    missing.append(f"{src.id}:{src.title or src.username}")
+            if missing:
+                logger.warning("Parser account is NOT in these sources: %s", ", ".join(missing))
+            else:
+                logger.info("Parser account is in all %d active sources", len(sources))
+    except Exception:
+        logger.exception("Startup source membership check failed")
+
     # Постоянный мониторинг новых сообщений
     asyncio.create_task(_monitor_new_messages(client, bot))
     logger.info("New-message monitoring started")
