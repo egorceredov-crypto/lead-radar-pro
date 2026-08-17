@@ -3,4 +3,5 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app
-CMD ["python", "-m", "app.bot.main"]
+ENV PYTHONUNBUFFERED=1
+CMD ["python", "-m", "app.manage", "bot"]
