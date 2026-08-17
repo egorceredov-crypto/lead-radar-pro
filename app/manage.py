@@ -46,6 +46,7 @@ async def run_bot():
     mod = importlib.import_module('app.bot.main')
     if hasattr(mod, 'main'):
         try:
+            print('RUNNING_BOT', flush=True)
             await mod.main()
         except Exception as e:
             print('BOT_CRASH:', e, flush=True)

@@ -2,11 +2,13 @@ version: '3.8'
 services:
   bot:
     build: .
-    command: python -m app.bot.main
+    command: python -m app.manage bot
     volumes:
       - ./:/app
     env_file:
       - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
     depends_on:
       - redis
     restart: unless-stopped
@@ -22,6 +24,8 @@ services:
       - ./:/app
     env_file:
       - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
     depends_on:
       - redis
     restart: unless-stopped
@@ -37,6 +41,8 @@ services:
       - ./:/app
     env_file:
       - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
     depends_on:
       - redis
     restart: unless-stopped
@@ -54,6 +60,8 @@ services:
       - ./:/app
     env_file:
       - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
     depends_on:
       - db
       - redis

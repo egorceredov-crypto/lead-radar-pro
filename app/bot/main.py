@@ -6,6 +6,8 @@ from aiogram.types import Message, CallbackQuery
 from aiogram import BaseMiddleware
 from aiogram.client.session.aiohttp import AiohttpSession
 
+print("BOT_ENTRY_START", flush=True)
+
 from config import settings
 from app.database.session import init_db
 from app.bot.handlers_sessions import router as sessions_router
