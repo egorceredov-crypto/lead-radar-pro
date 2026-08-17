@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sessions — Lead Radar PRO</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;padding:24px;background:#f5f7fb;color:#1f2937}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;border:1px solid #e5e7eb}
+    .btn{padding:6px 10px;border-radius:6px;text-decoration:none;color:#fff}
+    .btn-activate{background:#10b981}
+    .btn-deactivate{background:#ef4444}
+  </style>
+</head>
+<body>
+  <nav style="margin-bottom:16px">
+    <a href="/">Dashboard</a> | <a href="/chats">Чаты</a> | <a href="/sessions">Сессии</a> | <a href="/payments">Платежи</a>
+  </nav>
+  <h1>Telegram Sessions</h1>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Name</th><th>File</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% for s in sessions %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td>{{ s.session_name }}</td>
+        <td>{{ s.session_file }}</td>
+        <td>{{ s.status }}</td>
+        <td>
+          {% if s.status != 'active' %}
+            <a class="btn btn-activate" href="/sessions/activate/{{ s.id }}">Activate</a>
+          {% else %}
+            <a class="btn btn-deactivate" href="/sessions/deactivate/{{ s.id }}">Deactivate</a>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

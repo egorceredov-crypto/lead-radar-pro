@@ -1,0 +1,57 @@
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Telethon / bot sessions
+*.session
+*.session-journal
+sessions/
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+*.out
+
+# Uploads / temp
+uploads/
+tmp/
+temp/
+diag.txt
+pip-download-temp/
+*.tar.gz
+
+# Internal / diagnostic scripts
+app/tools/
+TODO.md
+CHANGELOG.md

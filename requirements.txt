@@ -1,0 +1,16 @@
+aiogram==3.30.0
+telethon>=1.44.0
+SQLAlchemy>=1.4
+alembic
+aiosqlite
+asyncpg
+redis
+pydantic
+pydantic-settings
+python-dotenv
+fastapi
+uvicorn
+httpx
+pytest
+jinja2
+pytest-asyncio

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Платежи — Lead Radar PRO</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;padding:24px;background:#f5f7fb;color:#1f2937}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;border:1px solid #e5e7eb}
+  </style>
+</head>
+<body>
+  <h1>Последние платежи</h1>
+  <table>
+    <thead><tr><th>ID</th><th>Сумма</th><th>Валюта</th><th>Статус</th><th>Дата</th></tr></thead>
+    <tbody>
+    {% for p in payments %}
+      <tr>
+        <td>{{ p.id }}</td>
+        <td>{{ p.amount }}</td>
+        <td>{{ p.currency }}</td>
+        <td>{{ p.status }}</td>
+        <td>{{ p.created_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

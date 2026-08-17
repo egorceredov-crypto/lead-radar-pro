@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Чаты — Lead Radar PRO</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;padding:24px;background:#f5f7fb;color:#1f2937}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;border:1px solid #e5e7eb}
+    .form-card{border:1px solid #d1d5db;padding:16px;border-radius:12px;margin-bottom:16px;background:#fff}
+    input{padding:8px;width:60%;border:1px solid #d1d5db;border-radius:6px}
+    button{padding:8px 16px;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer}
+    .btn-del{color:#ef4444;text-decoration:none}
+    .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px}
+    .badge-active{background:#d1fae5;color:#065f46}
+    .badge-paused{background:#fee2e2;color:#991b1b}
+  </style>
+</head>
+<body>
+  <nav style="margin-bottom:16px">
+    <a href="/">Dashboard</a> | <a href="/chats">Чаты</a> | <a href="/leads">Лиды</a> | <a href="/sessions">Сессии</a> | <a href="/payments">Платежи</a>
+  </nav>
+  <h1>Чаты для парсинга</h1>
+
+  <div class="form-card">
+    <h2>Добавить чат</h2>
+    <p>Введите ссылку, @username или ID чата. Поддерживаются публичные и приватные чаты, группы и каналы.</p>
+    <form action="/chats/add" method="post">
+      <input type="text" name="identifier" placeholder="@channel_name или https://t.me/channel_name" required>
+      <button type="submit">Добавить</button>
+    </form>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Название</th><th>Username</th><th>Chat ID</th><th>Тип</th><th>Статус</th><th>Действия</th></tr>
+    </thead>
+    <tbody>
+    {% for c in chats %}
+      <tr>
+        <td>{{ c.id }}</td>
+        <td>{{ c.title }}</td>
+        <td>{{ c.username }}</td>
+        <td>{{ c.chat_id }}</td>
+        <td>{{ c.type }}</td>
+        <td>
+          {% if c.status == 'active' %}
+            <span class="badge badge-active">активен</span>
+          {% else %}
+            <span class="badge badge-paused">пауза</span>
+          {% endif %}
+        </td>
+        <td><a class="btn-del" href="/chats/delete/{{ c.id }}">Удалить</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

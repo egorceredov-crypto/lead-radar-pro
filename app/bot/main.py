@@ -1,0 +1,96 @@
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher, Router
+from aiogram.types import Message, CallbackQuery
+from aiogram import BaseMiddleware
+from aiogram.client.session.aiohttp import AiohttpSession
+
+from config import settings
+from app.database.session import init_db
+from app.bot.handlers_sessions import router as sessions_router
+from app.bot.handlers_parse import router as parse_router
+from app.bot.handlers_user import router as user_router
+from app.payments.telegram import router as payments_router
+from app.parser.worker import main as parser_main
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class LoggingMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event, data):
+        if isinstance(event, Message):
+            logger.info("MESSAGE from %s: text=%r", event.from_user.id, event.text)
+        elif isinstance(event, CallbackQuery):
+            logger.info("CALLBACK from %s: data=%r", event.from_user.id, event.data)
+        try:
+            return await handler(event, data)
+        except Exception as e:
+            logger.exception("Handler error for %s: %s", event.from_user.id if hasattr(event, 'from_user') else 'unknown', e)
+            if isinstance(event, Message):
+                try:
+                    await event.answer("Ошибка. Попробуйте позже.")
+                except Exception:
+                    pass
+            elif isinstance(event, CallbackQuery):
+                try:
+                    await event.answer("Ошибка. Попробуйте позже.", show_alert=True)
+                except Exception:
+                    pass
+
+
+def _build_bot():
+    session = None
+    proxy_host = getattr(settings, "proxy_host", None)
+    proxy_port = getattr(settings, "proxy_port", None)
+    proxy_type = getattr(settings, "proxy_type", None)
+    if proxy_host and proxy_port and proxy_type:
+        try:
+            import aiohttp_socks
+            proxy_url = f"{proxy_type}://{proxy_host}:{proxy_port}"
+            session = AiohttpSession(proxy=proxy_url)
+            logger.info("Using proxy for bot: %s", proxy_url)
+        except Exception as e:
+            logger.warning("Failed to setup proxy for bot: %s", e)
+    return Bot(token=settings.bot_token, session=session)
+
+
+bot = _build_bot()
+dp = Dispatcher()
+router = Router()
+router.include_router(payments_router)
+router.include_router(user_router)
+router.include_router(sessions_router)
+router.include_router(parse_router)
+dp.include_router(router)
+dp.message.middleware(LoggingMiddleware())
+dp.callback_query.middleware(LoggingMiddleware())
+
+
+async def main():
+    logger.info("Starting bot...")
+    await init_db()
+    logger.info("Database initialized")
+    
+    async def _start_parser():
+        logger.info("Parser task starting...")
+        try:
+            await parser_main(bot)
+        except Exception as e:
+            logger.exception("Parser worker crashed: %s", e)
+        finally:
+            logger.info("Parser task finished")
+    
+    task = asyncio.create_task(_start_parser())
+    logger.info("Parser worker started, task id=%s", id(task))
+    
+    while True:
+        try:
+            await dp.start_polling(bot)
+        except Exception as e:
+            logger.error("Polling crashed: %s", e)
+            await asyncio.sleep(5)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
