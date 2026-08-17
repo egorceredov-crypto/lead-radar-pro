@@ -14,8 +14,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+import os
+from pathlib import Path
+
 app = FastAPI(title="Lead Radar PRO Web")
-app.mount("/static", StaticFiles(directory="app/web/static"), name="static")
+_static_dir = Path(__file__).resolve().parent / "static"
+if _static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+else:
+    logger.warning("Static directory not found: %s", _static_dir)
 templates = Jinja2Templates(directory="app/web/templates")
 
 
