@@ -224,7 +224,7 @@ async def _historical_search_for_source(user: User, source: Source, client, bot:
 async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str | None = None):
     """Ищет сообщения за последние HISTORY_DAYS дней по ключевым словам пользователя
     во всех активных источниках (Source), добавленных админом.
-    
+
     Если передан keyword, ищутся только совпадения по этому слову.
     """
     logger.info("HIST_SEARCH_START user_db_id=%s telegram_id=%s keyword=%s", user.id, user.telegram_id, keyword)
@@ -241,6 +241,12 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
         keywords = (await session.execute(keywords_query)).scalars().all()
         kw_words = [kw.word for kw in keywords]
         logger.info("HIST_SEARCH user=%s sources_count=%s keywords_count=%s kw_list=%s", user.id, len(sources), len(keywords), kw_words[:10])
+
+        if not sources and keywords and user_cats:
+            sources = (await session.execute(
+                select(Source).where(Source.status == "active")
+            )).scalars().all()
+            logger.info("HIST_SEARCH_FALLBACK user=%s reason=no_sources_for_categories total_sources=%s", user.id, len(sources))
 
     if not sources or not keywords:
         logger.info("HIST_SEARCH_SKIP user=%s reason=%s", user.id, "no_sources" if not sources else "no_keywords")
