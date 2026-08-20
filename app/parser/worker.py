@@ -551,35 +551,20 @@ async def main(bot=None):
     # Build cache of effective source IDs for all users
     async with AsyncSessionLocal() as session:
         users = (await session.execute(
-            select(User).where(User.subscription_status.in_(["free", "active"]))
+            select(User)
         )).scalars().all()
         for user in users:
-            from app.services.users import check_subscription
-            if await check_subscription(session, user):
-                source_ids = await _get_user_effective_source_ids(user)
-                logger.info("User %s effective sources: %d", user.id, len(source_ids))
+            source_ids = await _get_user_effective_source_ids(user)
+            logger.info("User %s effective sources: %d", user.id, len(source_ids))
 
-    # Постоянный мониторинг новых сообщений: каждый активный пользователь → собственный монитор
-    async with AsyncSessionLocal() as session:
-        active_users = (await session.execute(
-            select(User).where(User.subscription_status.in_(["free", "active"]))
-        )).scalars().all()
-        active_users = [u for u in active_users if await check_subscription(session, u)]
-
-    client_by_user = {}
-    for idx, u in enumerate(client_users):
-        if u is not None:
-            client_by_user[u.id] = clients[idx]
-
-    for user in active_users:
-        cl = client_by_user.get(user.id)
-        if cl is None:
-            cl = clients[0] if clients else None
-        if cl is None:
-            logger.warning("Skipping monitoring for user=%s: no clients available", user.id)
-            continue
-        asyncio.create_task(_monitor_new_messages(cl, user.id, bot))
-        logger.info("New-message monitoring started for user=%s telegram_id=%s", user.id, user.telegram_id)
+    # Постоянный мониторинг новых сообщений: все пользователи на одном проверенном клиенте
+    monitor_client = clients[0] if clients else None
+    if monitor_client is None:
+        logger.warning("No Telethon clients connected. Monitoring disabled.")
+    else:
+        for user in users:
+            asyncio.create_task(_monitor_new_messages(monitor_client, user.id, bot))
+            logger.info("New-message monitoring started for user=%s telegram_id=%s", user.id, user.telegram_id)
 
     # Периодический исторический поиск для всех пользователей
     async def periodic_historical():
