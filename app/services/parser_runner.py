@@ -32,11 +32,16 @@ async def _get_client():
     if _client is not None:
         return _client
     manager = TelethonClientManager()
-    sessions = manager.list_sessions()
+    sessions = manager.list_all_sessions()
     if not sessions:
         return None
-    _client = await manager.connect(sessions[0])
-    return _client
+    for session_name in sessions:
+        try:
+            _client = await manager.connect(session_name)
+            return _client
+        except Exception:
+            continue
+    return None
 
 
 async def _get_bot():
@@ -47,25 +52,39 @@ async def _get_bot():
     return _bot
 
 
-async def run_historical_for_user(user_id: int):
-    """Запускает исторический поиск для конкретного пользователя в фоне."""
+async def run_historical_for_user(user_id: int, keyword: str | None = None):
+    """Запускает исторический поиск для конкретного пользователя в фоне.
+    
+    Если передан keyword, ищутся только совпадения по этому слову.
+    Иначе ищутся все ключевые слова пользователя.
+    """
+    logger.info("RUN_HIST_FOR_USER start user_id=%s keyword=%s", user_id, keyword)
     async def task():
         try:
+            logger.info("RUN_HIST_FOR_USER getting client for user_id=%s", user_id)
             client = await _get_client()
             if client is None:
-                logger.warning("No Telethon client for historical search")
+                logger.error("RUN_HIST_FOR_USER FAILED user_id=%s reason=no_client", user_id)
                 return
+            logger.info("RUN_HIST_FOR_USER client ok for user_id=%s", user_id)
             bot = await _get_bot()
+            logger.info("RUN_HIST_FOR_USER bot ok for user_id=%s", user_id)
             async with AsyncSessionLocal() as session:
                 user = await session.get(User, user_id)
                 if not user:
+                    logger.error("RUN_HIST_FOR_USER FAILED user_id=%s reason=user_not_found", user_id)
                     return
+                logger.info("RUN_HIST_FOR_USER user found id=%s telegram_id=%s status=%s", user.id, user.telegram_id, user.subscription_status)
                 from app.services.users import check_subscription
                 if not await check_subscription(session, user):
+                    logger.error("RUN_HIST_FOR_USER FAILED user_id=%s reason=subscription_check_failed status=%s", user_id, user.subscription_status)
                     return
-            await _historical_search_for_user(user, client, bot)
+                logger.info("RUN_HIST_FOR_USER subscription ok for user_id=%s", user_id)
+            logger.info("RUN_HIST_FOR_USER calling _historical_search_for_user user_id=%s keyword=%s", user_id, keyword)
+            await _historical_search_for_user(user, client, bot, keyword=keyword)
+            logger.info("RUN_HIST_FOR_USER completed user_id=%s", user_id)
         except Exception:
-            logger.exception("Historical search task failed for user %s", user_id)
+            logger.exception("RUN_HIST_FOR_USER ERROR user_id=%s", user_id)
 
     asyncio.create_task(task())
 

@@ -1,7 +1,7 @@
 import datetime
 import math
 import secrets
-from sqlalchemy import select, func, text, delete
+from sqlalchemy import select, func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -323,11 +323,9 @@ async def check_subscription(session: AsyncSession, user: User) -> bool:
     if user.subscription_status == "active" and user.subscription_end_date:
         if user.subscription_end_date > now:
             return True
-        # Paid expired -> FREE with 3 days, delete old keywords
-        await session.execute(delete(Keyword).where(Keyword.user_id == user.id))
         user.subscription_status = "free"
         user.limits = {"keywords": 3}
-        user.trial_end_date = now + datetime.timedelta(days=3)
+        user.trial_end_date = now + datetime.timedelta(days=7)
         session.add(user)
         await session.commit()
         return True
@@ -335,11 +333,9 @@ async def check_subscription(session: AsyncSession, user: User) -> bool:
     if user.subscription_status == "trial" and user.trial_end_date:
         if user.trial_end_date > now:
             return True
-        # Trial expired -> FREE with 3 days, delete old keywords
-        await session.execute(delete(Keyword).where(Keyword.user_id == user.id))
         user.subscription_status = "free"
         user.limits = {"keywords": 3}
-        user.trial_end_date = now + datetime.timedelta(days=3)
+        user.trial_end_date = now + datetime.timedelta(days=7)
         session.add(user)
         await session.commit()
         return True

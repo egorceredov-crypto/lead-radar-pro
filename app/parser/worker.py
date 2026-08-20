@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import logging
+import time
 from sqlalchemy import select
 from telethon import events
 from telethon.tl.functions.messages import SearchRequest
@@ -17,7 +18,45 @@ from aiogram import Bot
 logger = logging.getLogger(__name__)
 
 # Период исторического поиска по умолчанию (дней). Админ может изменить.
-HISTORY_DAYS = 7
+HISTORY_DAYS = 3
+
+# Пакетное уведомление о новых лидах: {user_id: {"count": int, "last_sent": float}}
+_lead_batches: dict[int, dict] = {}
+_lead_batch_lock = asyncio.Lock()
+_LEAD_BATCH_DELAY = 30  # секунд между сводками
+_LEAD_BATCH_MIN_COUNT = 1  # минимальное количество лидов для отправки сводки
+
+
+async def _add_lead_to_batch(user_id: int, bot: Bot):
+    """Добавляет лид в пакет для пользователя. Отправляет сводку, если прошло достаточно времени."""
+    async with _lead_batch_lock:
+        if user_id not in _lead_batches:
+            _lead_batches[user_id] = {"count": 0, "last_sent": 0.0}
+        _lead_batches[user_id]["count"] += 1
+        batch = _lead_batches[user_id]
+        now = time.monotonic()
+        if batch["count"] >= _LEAD_BATCH_MIN_COUNT and (now - batch["last_sent"]) >= _LEAD_BATCH_DELAY:
+            count = batch["count"]
+            batch["count"] = 0
+            batch["last_sent"] = now
+            asyncio.create_task(_send_lead_batch(user_id, bot, count))
+
+
+async def _send_lead_batch(user_id: int, bot: Bot, count: int):
+    """Отправляет сводку по найденным лидам."""
+    try:
+        await bot.send_message(
+            user_id,
+            f"🔎 Найдены новые лиды: {count}\nПосмотреть в /results",
+        )
+        logger.info("Sent lead batch notification to user %s: %d leads", user_id, count)
+    except Exception as e:
+        logger.error("Failed to send lead batch notification to user %s: %s", user_id, e)
+
+def _normalize_chat_id(chat_id: int) -> int:
+    if isinstance(chat_id, int) and chat_id < 0 and str(abs(chat_id)).startswith("100"):
+        return int(str(abs(chat_id))[3:])
+    return chat_id
 
 
 def _build_link(chat, msg_id: int) -> str | None:
@@ -110,26 +149,6 @@ async def _save_lead(user: User, source: Source, chat, msg, text: str, matched: 
         session.add(lead)
         await session.flush()
 
-        # Уведомление только при мониторинге новых сообщений, не при историческом поиске
-        if not is_historical_search:
-            s = user.settings or {}
-            if s.get("notifications", True):
-                try:
-                    notif_text = (
-                        f"Новое совпадение: {matched}\n\n"
-                        f"{text[:300]}\n\n"
-                        f"Источник: {source.title or source.username or '—'}"
-                    )
-                    if s.get("show_author", True):
-                        notif_text += f"\nАвтор: {sender_username}"
-                    if s.get("show_date", True) and msg.date:
-                        notif_text += f"\nДата: {msg.date.strftime('%d.%m %H:%M')}"
-                    if s.get("show_link", True) and link:
-                        notif_text += f"\n{link}"
-                    await bot.send_message(user.telegram_id, notif_text)
-                except Exception:
-                    logger.exception("Failed to send notification to user %s", user.id)
-
         notif = Notification(
             user_id=user.id,
             message=f"Совпадение: {matched}",
@@ -163,7 +182,7 @@ async def _historical_search_for_source(user: User, source: Source, client, bot:
     saved = 0
 
     try:
-        entity = await client.get_entity(source.chat_id or source.username)
+        entity = await client.get_entity(_normalize_chat_id(source.chat_id) or source.username)
     except Exception as e:
         logger.warning("Historical-source: cannot resolve source %s: %s", source.id, e)
         return
@@ -202,21 +221,34 @@ async def _historical_search_for_source(user: User, source: Source, client, bot:
     logger.info("Historical search for user %s in source %s: found %s matches", user.id, source.id, found)
 
 
-async def _historical_search_for_user(user: User, client, bot: Bot):
+async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str | None = None):
     """Ищет сообщения за последние HISTORY_DAYS дней по ключевым словам пользователя
-    во всех активных источниках (Source), добавленных админом."""
+    во всех активных источниках (Source), добавленных админом.
+    
+    Если передан keyword, ищутся только совпадения по этому слову.
+    """
+    logger.info("HIST_SEARCH_START user_db_id=%s telegram_id=%s keyword=%s", user.id, user.telegram_id, keyword)
     async with AsyncSessionLocal() as session:
         sources_query = select(Source).where(Source.status == "active")
         user_cats = (user.settings or {}).get("categories", []) if user.settings else []
+        logger.info("HIST_SEARCH user=%s cats=%s", user.id, user_cats)
         if user_cats:
             sources_query = sources_query.where(Source.category.in_(user_cats))
         sources = (await session.execute(sources_query)).scalars().all()
-        keywords = (await session.execute(
-            select(Keyword).where(Keyword.user_id == user.id)
-        )).scalars().all()
+        keywords_query = select(Keyword).where(Keyword.user_id == user.id)
+        if keyword:
+            keywords_query = keywords_query.where(Keyword.word == keyword)
+        keywords = (await session.execute(keywords_query)).scalars().all()
+        kw_words = [kw.word for kw in keywords]
+        logger.info("HIST_SEARCH user=%s sources_count=%s keywords_count=%s kw_list=%s", user.id, len(sources), len(keywords), kw_words[:10])
 
     if not sources or not keywords:
-        logger.info("No sources or keywords for user %s, skipping historical search", user.id)
+        logger.info("HIST_SEARCH_SKIP user=%s reason=%s", user.id, "no_sources" if not sources else "no_keywords")
+        try:
+            await bot.send_message(user.telegram_id, "ℹ️ Нет активных источников или ключевых слов для поиска.")
+            logger.info("HIST_SEARCH_MSG_SENT user=%s msg=no_sources_keywords", user.id)
+        except Exception as e:
+            logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e)
         return
 
     min_date = datetime.datetime.utcnow() - datetime.timedelta(days=HISTORY_DAYS)
@@ -225,29 +257,31 @@ async def _historical_search_for_user(user: User, client, bot: Bot):
     total_keywords = len(keywords)
     total_sources = len(sources)
 
-    logger.info("Starting historical search for user %s: %d sources, %d keywords", user.id, total_sources, total_keywords)
+    logger.info("HIST_SEARCH_STARTING user=%s sources=%s keywords=%s min_date=%s", user.id, total_sources, total_keywords, min_date.isoformat())
 
     try:
         await bot.send_message(user.telegram_id, f"🔍 Поиск: {total_sources} источников, {total_keywords} слов")
-    except Exception:
-        pass
+        logger.info("HIST_SEARCH_MSG_SENT user=%s msg=search_started", user.id)
+    except Exception as e:
+        logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e)
 
     for source in sources:
-        logger.info("Processing source %s (%s) for user %s", source.id, source.title or source.username, user.id)
+        logger.info("HIST_SEARCH_SOURCE user=%s source=%s title=%s", user.id, source.id, source.title or source.username)
         try:
-            entity = await client.get_entity(source.chat_id or source.username)
-            logger.info("Resolved source %s to entity", source.id)
+            entity = await client.get_entity(_normalize_chat_id(source.chat_id) or source.username)
+            logger.info("HIST_SEARCH_RESOLVED user=%s source=%s", user.id, source.id)
         except Exception as e:
-            logger.warning("Historical: cannot resolve source %s: %s", source.id, e)
+            logger.warning("HIST_SEARCH_RESOLVE_FAIL user=%s source=%s err=%s", user.id, source.id, e)
             try:
                 await bot.send_message(user.telegram_id, f"⚠️ Не удалось получить чат: {source.title or source.username}")
-            except Exception:
-                pass
+                logger.info("HIST_SEARCH_MSG_SENT user=%s msg=resolve_failed source=%s", user.id, source.id)
+            except Exception as e2:
+                logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e2)
             continue
 
         for kw in keywords:
             try:
-                logger.info("Searching keyword '%s' in source %s", kw.word, source.id)
+                logger.info("HIST_SEARCH_KW user=%s source=%s kw=%s", user.id, source.id, kw.word)
                 result = await client(SearchRequest(
                     peer=entity,
                     q=kw.word,
@@ -261,30 +295,33 @@ async def _historical_search_for_user(user: User, client, bot: Bot):
                     min_id=0,
                     hash=0,
                 ))
-                logger.info("Found %d messages for keyword '%s' in source %s", len(result.messages), kw.word, source.id)
+                logger.info("HIST_SEARCH_KW_RESULT user=%s source=%s kw=%s found_msgs=%s", user.id, source.id, kw.word, len(result.messages))
                 for msg in result.messages:
                     text = getattr(msg, "message", "") or ""
                     if not text:
                         continue
-                    # Проверяем минус-слова
                     async with AsyncSessionLocal() as s2:
                         if await _has_stopword(text, user, s2):
+                            logger.info("HIST_SEARCH_STOPWORD user=%s source=%s msg_id=%s", user.id, source.id, msg.id)
                             continue
-                    # Проверяем, что сообщение реально содержит ключевое слово
-                    if kw.word.lower() not in text.lower():
+                    kw_words = kw.word.lower().split()
+                    if not all(w in text.lower() for w in kw_words):
+                        logger.info("HIST_SEARCH_KW_MISMATCH user=%s source=%s msg_id=%s kw=%s", user.id, source.id, msg.id, kw.word)
                         continue
-                    if await _save_lead(user, source, entity, msg, text, kw.word, bot, is_historical_search=True):
+                    saved_successfully = await _save_lead(user, source, entity, msg, text, kw.word, bot, is_historical_search=True)
+                    if saved_successfully:
                         saved += 1
                     found += 1
-                    logger.info("Saved lead %d for user %s from source %s", found, user.id, source.id)
+                    logger.info("HIST_SEARCH_LEAD user=%s source=%s kw=%s msg_id=%s saved=%s", user.id, source.id, kw.word, msg.id, saved_successfully)
             except Exception as e:
-                logger.warning("Historical search error in source %s for %s: %s", source.id, kw.word, e)
+                logger.warning("HIST_SEARCH_KW_ERROR user=%s source=%s kw=%s err=%s", user.id, source.id, kw.word, e)
 
-    logger.info("Historical search for user %s: found %s matches, saved %s new leads", user.id, found, saved)
+    logger.info("HIST_SEARCH_END user=%s found=%s saved=%s", user.id, found, saved)
     try:
         await bot.send_message(user.telegram_id, f"✅ Поиск завершен.\nНайдено совпадений: {found}\nНовых лидов: {saved}\nПосмотреть: /results")
-    except Exception:
-        pass
+        logger.info("HIST_SEARCH_MSG_SENT user=%s msg=search_complete", user.id)
+    except Exception as e:
+        logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e)
 
 
 async def _monitor_new_messages(client, bot: Bot):
@@ -352,7 +389,11 @@ async def _monitor_new_messages(client, bot: Bot):
                         monitor_logger.debug("Stopword matched for user %s in chat %s", user.id, chat_id)
                         continue
                 monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, getattr(user, 'id', user), getattr(source, 'id', source))
-                await _save_lead(user, source, chat, event.message, text, matched, bot)
+                saved = await _save_lead(user, source, chat, event.message, text, matched, bot)
+                if saved:
+                    s = user.settings or {}
+                    if s.get("notifications", True):
+                        await _add_lead_to_batch(user.telegram_id, bot)
         except Exception:
             monitor_logger.exception("Monitor handler error")
 
@@ -365,14 +406,26 @@ async def main(bot=None):
         from aiogram import Bot
         bot = Bot(token=settings.bot_token)
     manager = TelethonClientManager()
-    sessions = manager.list_sessions()
+    sessions = manager.list_all_sessions()
     if not sessions:
         logger.warning("No session files found. Parsing disabled.")
         return
 
-    client = await manager.connect(sessions[0])
-    me = await client.get_me()
-    logger.info("Connected Telethon as %s", getattr(me, "username", "?"))
+    clients = []
+    for session_name in sessions:
+        try:
+            client = await manager.connect(session_name)
+            me = await client.get_me()
+            logger.info("Connected Telethon as %s (session=%s)", getattr(me, "username", "?"), session_name)
+            clients.append(client)
+        except Exception as e:
+            logger.exception("Failed to connect session %s: %s", session_name, e)
+
+    if not clients:
+        logger.warning("No Telethon clients connected. Parsing disabled.")
+        return
+
+    client = clients[0]
 
     # Проверка участия в активных источниках
     try:
@@ -395,9 +448,10 @@ async def main(bot=None):
     except Exception:
         logger.exception("Startup source membership check failed")
 
-    # Постоянный мониторинг новых сообщений
-    asyncio.create_task(_monitor_new_messages(client, bot))
-    logger.info("New-message monitoring started")
+    # Постоянный мониторинг новых сообщений на всех подключённых клиентах
+    for idx, cl in enumerate(clients):
+        asyncio.create_task(_monitor_new_messages(cl, bot))
+        logger.info("New-message monitoring started for client %d/%d", idx + 1, len(clients))
 
     # Периодический исторический поиск для всех пользователей
     async def periodic_historical():
@@ -426,7 +480,11 @@ async def main(bot=None):
         while True:
             await asyncio.sleep(60)
     finally:
-        await client.disconnect()
+        for cl in clients:
+            try:
+                await cl.disconnect()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

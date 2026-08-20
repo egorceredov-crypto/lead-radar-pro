@@ -8,20 +8,41 @@
     body{font-family:Arial,Helvetica,sans-serif;padding:24px;background:#f5f7fb;color:#1f2937}
     .card{border:1px solid #d1d5db;padding:20px;border-radius:12px;margin-bottom:16px;background:#ffffff}
     h1{margin-bottom:16px}
+    .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}
+    .step{border:1px solid #e5e7eb;padding:12px;border-radius:8px;background:#f9fafb}
+    .step h3{margin:0 0 6px;font-size:16px}
+    .step p{margin:0;font-size:14px;color:#4b5563}
   </style>
 </head>
 <body>
-<nav style="margin-bottom:16px">
-    <a href="/">Dashboard</a> | <a href="/chats">Чаты</a> | <a href="/leads">Лиды</a> | <a href="/sessions">Сессии</a> | <a href="/payments">Платежи</a>
+  <nav style="margin-bottom:16px">
+    <a href="/">Dashboard</a> | <a href="/chats">Чаты</a> | <a href="/sessions">Сессии</a> | <a href="/payments">Платежи</a>
   </nav>
   <h1>Lead Radar PRO — Dashboard</h1>
+  <div class="card">
+    <h2>Как пользоваться</h2>
+    <div class="steps">
+      <div class="step">
+        <h3>1. Добавьте ключевые слова</h3>
+        <p>Откройте бота в Telegram и нажмите <b>/keywords</b> → <b>Добавить слово</b>.</p>
+      </div>
+      <div class="step">
+        <h3>2. Запустите поиск</h3>
+        <p>После добавления слова автоматически запустится поиск по чатам за последние 14 дней.</p>
+      </div>
+      <div class="step">
+        <h3>3. Смотрите результаты</h3>
+        <p>В боте: <b>/results</b>. Здесь: раздел <b>Лиды</b> (скоро).</p>
+      </div>
+    </div>
+  </div>
   <div class="card">
     <h2>Статистика</h2>
     <p>Пользователи: {{ users_count }}</p>
     <p>Лиды: {{ leads_count }}</p>
     <p>Сообщения: {{ messages_count }}</p>
     <p>Активные подписки: {{ active_subscriptions }}</p>
-    <p style="margin-top:12px"><a href="/chats">Управление чатами</a> | <a href="/leads">Просмотр лидов</a></p>
+    <p style="margin-top:12px"><a href="/chats">Управление чатами</a></p>
   </div>
 </body>
 </html>

@@ -1,7 +1,6 @@
 import os
 import asyncio
 import logging
-import sqlite3
 from typing import Dict, Optional
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -45,16 +44,18 @@ class TelethonClientManager:
         return None
 
     def list_sessions(self) -> list:
-        session_string = getattr(settings, "session_string", None)
-        if session_string:
-            return ["string_session"]
         owner = getattr(settings, 'owner_session', None)
         if owner:
             p = os.path.join(self.sessions_dir, owner)
             return [owner] if os.path.exists(p) else []
         if not os.path.exists(self.sessions_dir):
             return []
-        return [f for f in os.listdir(self.sessions_dir) if not f.startswith('.')]
+        return [f for f in os.listdir(self.sessions_dir) if not f.startswith('.') and f.endswith('.session') and '.session-' not in f]
+
+    def list_all_sessions(self) -> list:
+        if not os.path.exists(self.sessions_dir):
+            return []
+        return [f for f in os.listdir(self.sessions_dir) if not f.startswith('.') and f.endswith('.session') and '.session-' not in f]
 
     async def connect(self, name: str) -> TelegramClient:
         if name in self.clients:
@@ -86,19 +87,6 @@ class TelethonClientManager:
                         await client.start()
                     except RPCError as e:
                         logger.warning("Session %s not authorized: %s", name, e)
-            except sqlite3.OperationalError as exc:
-                if "database is locked" in str(exc):
-                    logger.warning("Session %s locked, retrying connect: %s", name, exc)
-                    await asyncio.sleep(1)
-                    try:
-                        await client.connect()
-                        if not await client.is_user_authorized() and not session_string:
-                            await client.start()
-                    except Exception as retry_exc:
-                        logger.exception("Retry connect session %s failed: %s", name, retry_exc)
-                        raise
-                else:
-                    raise
             except Exception as e:
                 logger.exception("Failed to connect session %s: %s", name, e)
                 raise
