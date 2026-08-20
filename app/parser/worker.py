@@ -96,21 +96,31 @@ async def _match_keywords(text: str, user: User, session) -> str | None:
     return None
 
 
+def _normalize_category(name: str) -> str:
+    """Normalize category name for matching: lowercase, strip, remove common plural suffixes."""
+    if not name:
+        return ""
+    s = name.strip().lower()
+    for suffix in ("ы", "и"):
+        if s.endswith(suffix):
+            s = s[:-1]
+    return s
+
+
 async def _get_user_effective_source_ids(user: User) -> set[int]:
     """Возвращает set ID источников, которые пользователь должен получать.
-    Учитывает выбранные категории и fallback на все источники, если категории не совпадают."""
+    Учитывает выбранные категории. Если категории не совпадают ни с одним источником — возвращает пустой set."""
     if user.id in _user_effective_source_ids:
         return _user_effective_source_ids[user.id]
     async with AsyncSessionLocal() as session:
         sources_query = select(Source).where(Source.status == "active")
         user_cats = (user.settings or {}).get("categories", []) if user.settings else []
         if user_cats:
-            sources_query = sources_query.where(Source.category.in_(user_cats))
-        sources = (await session.execute(sources_query)).scalars().all()
-        if not sources and user_cats:
-            sources = (await session.execute(
-                select(Source).where(Source.status == "active")
-            )).scalars().all()
+            normalized_user_cats = [_normalize_category(c) for c in user_cats]
+            all_sources = (await session.execute(sources_query)).scalars().all()
+            sources = [s for s in all_sources if s.category and _normalize_category(s.category) in normalized_user_cats]
+        else:
+            sources = (await session.execute(sources_query)).scalars().all()
         source_ids = {s.id for s in sources}
     _user_effective_source_ids[user.id] = source_ids
     return source_ids

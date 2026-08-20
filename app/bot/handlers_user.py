@@ -233,7 +233,7 @@ async def _show_lead_card(message: Message, lead: Lead, index: int, total: int, 
     if lead.link:
         kb.button(text="Открыть", url=lead.link)
     kb.button(text="◀️ Назад", callback_data="results:prev")
-    kb.button(text=f"{index + 1}/{total}", callback_data="results:noop")
+    kb.button(text=f"{index + 1}/{total}", callback_data="results:pick")
     kb.button(text="Следующий ▶️", callback_data="results:next")
     kb.adjust(2, 1, 2)
     await message.answer(text, reply_markup=kb.as_markup(), parse_mode="HTML")
@@ -293,8 +293,15 @@ async def cb_results_next(cb: CallbackQuery):
     await cb.answer()
 
 
-@router.callback_query(F.data == "results:noop")
-async def cb_results_noop(cb: CallbackQuery):
+@router.callback_query(F.data == "results:pick")
+async def cb_results_pick(cb: CallbackQuery):
+    state = WAITING.get(cb.from_user.id)
+    if not state or state.get("action") != "results_view":
+        await cb.answer("Сначала откройте Результаты")
+        return
+    total = state.get("total", len(state.get("lead_ids", [])))
+    WAITING[cb.from_user.id] = {"action": "results_pick", "lead_ids": state["lead_ids"], "total": total}
+    await cb.message.edit_text(f"Введите номер лида (1–{total}):", reply_markup=cancel_kb())
     await cb.answer()
 
 
@@ -353,7 +360,7 @@ def _results_kb(index: int, total: int, link: str | None = None, lead_id: int | 
     if link:
         kb.button(text="Открыть", url=link)
     kb.button(text="◀️ Назад", callback_data="results:prev")
-    kb.button(text=f"{index + 1}/{total}", callback_data="results:noop")
+    kb.button(text=f"{index + 1}/{total}", callback_data="results:pick")
     kb.button(text="Следующий ▶️", callback_data="results:next")
     if lead_id:
         kb.button(text="🗑 Удалить", callback_data=f"results:delete:{lead_id}")
@@ -1386,6 +1393,35 @@ async def handle_text(message: Message):
                     err += 1
             await message.answer(BROADCAST_DONE.format(ok=ok, err=err))
             WAITING.pop(message.from_user.id, None)
+            return
+
+        if action == "results_pick":
+            text = message.text.strip()
+            if not text.isdigit():
+                await message.answer("Введите число.", reply_markup=cancel_kb())
+                return
+            num = int(text)
+            state = WAITING.get(message.from_user.id, {})
+            ids = state.get("lead_ids", [])
+            total = state.get("total", len(ids))
+            if num < 1 or num > total:
+                await message.answer(f"Введите число от 1 до {total}.", reply_markup=cancel_kb())
+                return
+            idx = num - 1
+            state["index"] = idx
+            state["action"] = "results_view"
+            async with AsyncSessionLocal() as session:
+                lead = await session.get(Lead, ids[idx])
+            if lead:
+                header = f"Всего лидов: {total}\n\n"
+                await message.answer(header + LEAD_CARD.format(
+                    matched=lead.matched_keyword or "—",
+                    chat_title=lead.chat_title or "Источник",
+                    sender=lead.sender_username or "—",
+                    date=lead.lead_date.strftime("%d.%m %H:%M") if lead.lead_date else "",
+                    text=(lead.text or "")[:2000],
+                ),
+                                    reply_markup=_results_kb(idx, total, lead.link, lead.id), parse_mode="HTML")
             return
 
 
