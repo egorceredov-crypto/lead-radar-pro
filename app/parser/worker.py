@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 # Период исторического поиска по умолчанию (дней). Админ может изменить.
 HISTORY_DAYS = 3
+QUICK_SEARCH_SOURCES_LIMIT = 20
+SEARCH_DELAY = 0.5
 
 # Пакетное уведомление о новых лидах: {user_id: {"count": int, "last_sent": float}}
 _lead_batches: dict[int, dict] = {}
@@ -271,7 +273,12 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
     except Exception as e:
         logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e)
 
-    for source in sources:
+    search_sources = sources
+    if keyword and len(sources) > QUICK_SEARCH_SOURCES_LIMIT:
+        search_sources = sources[:QUICK_SEARCH_SOURCES_LIMIT]
+        logger.info("HIST_SEARCH_QUICK user=%s keyword=%s limited_sources=%s", user.id, keyword, len(search_sources))
+
+    for source in search_sources:
         logger.info("HIST_SEARCH_SOURCE user=%s source=%s title=%s", user.id, source.id, source.title or source.username)
         try:
             entity = await client.get_entity(_normalize_chat_id(source.chat_id) or source.username)
@@ -296,7 +303,7 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
                     max_date=None,
                     offset_id=0,
                     add_offset=0,
-                    limit=100,
+                    limit=50,
                     max_id=0,
                     min_id=0,
                     hash=0,
@@ -321,6 +328,10 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
                     logger.info("HIST_SEARCH_LEAD user=%s source=%s kw=%s msg_id=%s saved=%s", user.id, source.id, kw.word, msg.id, saved_successfully)
             except Exception as e:
                 logger.warning("HIST_SEARCH_KW_ERROR user=%s source=%s kw=%s err=%s", user.id, source.id, kw.word, e)
+
+        if keyword and search_sources is not None and source in search_sources and source != search_sources[-1]:
+            import asyncio
+            await asyncio.sleep(SEARCH_DELAY)
 
     logger.info("HIST_SEARCH_END user=%s found=%s saved=%s", user.id, found, saved)
     try:
