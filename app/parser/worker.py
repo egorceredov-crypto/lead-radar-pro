@@ -126,6 +126,15 @@ async def _get_user_effective_source_ids(user: User) -> set[int]:
     return source_ids
 
 
+async def _get_user_effective_source_ids_by_id(user_id: int) -> set[int]:
+    """Reload user from DB and return effective source IDs."""
+    async with AsyncSessionLocal() as session:
+        user = await session.get(User, user_id)
+        if user is None:
+            return set()
+        return await _get_user_effective_source_ids(user)
+
+
 async def _has_stopword(text: str, user: User, session) -> bool:
     """True, если текст содержит минус-слово."""
     if not text:
@@ -407,13 +416,14 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
         logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e)
 
 
-async def _monitor_new_messages(client, user: User, bot: Bot):
+async def _monitor_new_messages(client, user_id: int, bot: Bot):
     """Постоянный мониторинг новых сообщений для конкретного пользователя."""
     monitor_logger = logging.getLogger("app.parser.monitor")
     monitor_logger.setLevel(logging.INFO)
-    effective_sources = await _get_user_effective_source_ids(user)
-    monitor_logger.info("Monitor started for user=%s telegram_id=%s sources=%d", user.id, user.telegram_id, len(effective_sources))
-    
+    first_user = await _get_user_effective_source_ids_by_id(user_id)
+    monitor_logger.info("Monitor started for user_id=%s sources=%d", user_id, len(first_user))
+    effective_sources = first_user
+
     async def handler(event):
         try:
             text = getattr(event.message, "message", None) or getattr(event.message, "text", None) or ""
@@ -449,24 +459,29 @@ async def _monitor_new_messages(client, user: User, bot: Bot):
                     monitor_logger.debug("Monitor: no active source for chat_id=%s username=%s, skipping", chat_id, chat_username)
                     return
 
+                fresh_user = await session.get(User, user_id)
+                if fresh_user is None:
+                    monitor_logger.warning("Monitor: user %s not found, skipping", user_id)
+                    return
+                effective_sources = await _get_user_effective_source_ids(fresh_user)
                 if source.id not in effective_sources:
-                    monitor_logger.debug("Monitor: source %s not in user %s effective sources, skipping", source.id, user.id)
+                    monitor_logger.debug("Monitor: source %s not in user %s effective sources, skipping", source.id, user_id)
                     return
 
                 async with AsyncSessionLocal() as s2:
-                    matched = await _match_keywords(text, user, s2)
+                    matched = await _match_keywords(text, fresh_user, s2)
                     if not matched:
-                        monitor_logger.debug("Monitor: no keyword match for user %s in source %s", user.id, source.id)
+                        monitor_logger.debug("Monitor: no keyword match for user %s in source %s", user_id, source.id)
                         return
-                    if await _has_stopword(text, user, s2):
-                        monitor_logger.debug("Stopword matched for user %s in chat %s", user.id, chat_id)
+                    if await _has_stopword(text, fresh_user, s2):
+                        monitor_logger.debug("Stopword matched for user %s in chat %s", user_id, chat_id)
                         return
-                monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, user.id, source.id)
-                saved = await _save_lead(user, source, chat, event.message, text, matched, bot)
+                monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, user_id, source.id)
+                saved = await _save_lead(fresh_user, source, chat, event.message, text, matched, bot)
                 if saved:
-                    s = user.settings or {}
+                    s = fresh_user.settings or {}
                     if s.get("notifications", True):
-                        await _add_lead_to_batch(user.telegram_id, bot)
+                        await _add_lead_to_batch(fresh_user.telegram_id, bot)
         except Exception:
             monitor_logger.exception("Monitor handler error")
 
@@ -544,14 +559,27 @@ async def main(bot=None):
                 source_ids = await _get_user_effective_source_ids(user)
                 logger.info("User %s effective sources: %d", user.id, len(source_ids))
 
-    # Постоянный мониторинг новых сообщений: каждый клиент → только для своего пользователя
-    for idx, cl in enumerate(clients):
-        user = client_users[idx]
-        if user is None:
-            logger.warning("Skipping monitoring for client %d: no linked user", idx + 1)
+    # Постоянный мониторинг новых сообщений: каждый активный пользователь → собственный монитор
+    async with AsyncSessionLocal() as session:
+        active_users = (await session.execute(
+            select(User).where(User.subscription_status.in_(["free", "active"]))
+        )).scalars().all()
+        active_users = [u for u in active_users if await check_subscription(session, u)]
+
+    client_by_user = {}
+    for idx, u in enumerate(client_users):
+        if u is not None:
+            client_by_user[u.id] = clients[idx]
+
+    for user in active_users:
+        cl = client_by_user.get(user.id)
+        if cl is None:
+            cl = clients[0] if clients else None
+        if cl is None:
+            logger.warning("Skipping monitoring for user=%s: no clients available", user.id)
             continue
-        asyncio.create_task(_monitor_new_messages(cl, user, bot))
-        logger.info("New-message monitoring started for user=%s (client %d/%d)", user.id, idx + 1, len(clients))
+        asyncio.create_task(_monitor_new_messages(cl, user.id, bot))
+        logger.info("New-message monitoring started for user=%s telegram_id=%s", user.id, user.telegram_id)
 
     # Периодический исторический поиск для всех пользователей
     async def periodic_historical():

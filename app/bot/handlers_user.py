@@ -233,7 +233,7 @@ async def _show_lead_card(message: Message, lead: Lead, index: int, total: int, 
     if lead.link:
         kb.button(text="Открыть", url=lead.link)
     kb.button(text="◀️ Назад", callback_data="results:prev")
-    kb.button(text=f"{index + 1}/{total}", callback_data="results:pick")
+    kb.button(text=f"{index + 1}/{total} — нажмите, чтобы выбрать", callback_data="results:pick")
     kb.button(text="Следующий ▶️", callback_data="results:next")
     kb.adjust(2, 1, 2)
     await message.answer(text, reply_markup=kb.as_markup(), parse_mode="HTML")
@@ -360,7 +360,7 @@ def _results_kb(index: int, total: int, link: str | None = None, lead_id: int | 
     if link:
         kb.button(text="Открыть", url=link)
     kb.button(text="◀️ Назад", callback_data="results:prev")
-    kb.button(text=f"{index + 1}/{total}", callback_data="results:pick")
+    kb.button(text=f"{index + 1}/{total} — нажмите, чтобы выбрать", callback_data="results:pick")
     kb.button(text="Следующий ▶️", callback_data="results:next")
     if lead_id:
         kb.button(text="🗑 Удалить", callback_data=f"results:delete:{lead_id}")
