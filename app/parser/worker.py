@@ -189,36 +189,47 @@ async def _historical_search_for_source(user: User, source: Source, client, bot:
         logger.warning("Historical-source: cannot resolve source %s: %s", source.id, e)
         return
 
-    for kw in keywords:
-        try:
-            result = await client(SearchRequest(
-                peer=entity,
-                q=kw.word,
-                filter=InputMessagesFilterEmpty(),
-                min_date=min_date,
-                max_date=None,
-                offset_id=0,
-                add_offset=0,
-                limit=100,
-                max_id=0,
-                min_id=0,
-                hash=0,
-            ))
-            for msg in result.messages:
-                text = getattr(msg, "message", "") or ""
-                if not text:
-                    continue
-                async with AsyncSessionLocal() as s2:
-                    if await _has_stopword(text, user, s2):
+    search_semaphore = asyncio.Semaphore(3)
+
+    async def _search_one(kw):
+        local_found = 0
+        local_saved = 0
+        async with search_semaphore:
+            try:
+                result = await client(SearchRequest(
+                    peer=entity,
+                    q=kw.word,
+                    filter=InputMessagesFilterEmpty(),
+                    min_date=min_date,
+                    max_date=None,
+                    offset_id=0,
+                    add_offset=0,
+                    limit=50,
+                    max_id=0,
+                    min_id=0,
+                    hash=0,
+                ))
+                for msg in result.messages:
+                    text = getattr(msg, "message", "") or ""
+                    if not text:
                         continue
-                kw_words = kw.word.lower().split()
-                if not all(w in text.lower() for w in kw_words):
-                    continue
-                if await _save_lead(user, source, entity, msg, text, kw.word, bot):
-                    saved += 1
-                found += 1
-        except Exception as e:
-            logger.warning("Historical-source search error in %s for %s: %s", source.id, kw.word, e)
+                    async with AsyncSessionLocal() as s2:
+                        if await _has_stopword(text, user, s2):
+                            continue
+                    kw_words = kw.word.lower().split()
+                    if not all(w in text.lower() for w in kw_words):
+                        continue
+                    if await _save_lead(user, source, entity, msg, text, kw.word, bot):
+                        local_saved += 1
+                    local_found += 1
+            except Exception as e:
+                logger.warning("Historical-source search error in %s for %s: %s", source.id, kw.word, e)
+            return local_found, local_saved
+
+    results = await asyncio.gather(*[_search_one(kw) for kw in keywords])
+    for f, s in results:
+        found += f
+        saved += s
 
     logger.info("Historical search for user %s in source %s: found %s matches", user.id, source.id, found)
 
@@ -278,23 +289,36 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
         search_sources = sources[:QUICK_SEARCH_SOURCES_LIMIT]
         logger.info("HIST_SEARCH_QUICK user=%s keyword=%s limited_sources=%s", user.id, keyword, len(search_sources))
 
-    for source in search_sources:
-        logger.info("HIST_SEARCH_SOURCE user=%s source=%s title=%s", user.id, source.id, source.title or source.username)
+    async def _resolve(src):
         try:
-            entity = await client.get_entity(_normalize_chat_id(source.chat_id) or source.username)
-            logger.info("HIST_SEARCH_RESOLVED user=%s source=%s", user.id, source.id)
+            return await client.get_entity(_normalize_chat_id(src.chat_id) or src.username)
         except Exception as e:
-            logger.warning("HIST_SEARCH_RESOLVE_FAIL user=%s source=%s err=%s", user.id, source.id, e)
-            try:
-                await bot.send_message(user.telegram_id, f"⚠️ Не удалось получить чат: {source.title or source.username}")
-                logger.info("HIST_SEARCH_MSG_SENT user=%s msg=resolve_failed source=%s", user.id, source.id)
-            except Exception as e2:
-                logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e2)
-            continue
+            logger.warning("HIST_SEARCH_RESOLVE_FAIL user=%s source=%s err=%s", user.id, src.id, e)
+            return None
 
-        for kw in keywords:
+    resolve_tasks = [_resolve(src) for src in search_sources]
+    entities = await asyncio.gather(*resolve_tasks, return_exceptions=True)
+
+    failed_sources = []
+    for src, entity in zip(search_sources, entities):
+        if entity is None or isinstance(entity, Exception):
+            failed_sources.append(src.title or src.username or str(src.id))
+
+    if failed_sources:
+        try:
+            await bot.send_message(user.telegram_id, f"⚠️ Не удалось получить чаты: {', '.join(failed_sources)}")
+        except Exception:
+            pass
+
+    search_semaphore = asyncio.Semaphore(3)
+    found = 0
+    saved = 0
+
+    async def _search_one(src, entity, kw):
+        if entity is None or isinstance(entity, Exception):
+            return 0, 0
+        async with search_semaphore:
             try:
-                logger.info("HIST_SEARCH_KW user=%s source=%s kw=%s", user.id, source.id, kw.word)
                 result = await client(SearchRequest(
                     peer=entity,
                     q=kw.word,
@@ -308,29 +332,42 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
                     min_id=0,
                     hash=0,
                 ))
-                logger.info("HIST_SEARCH_KW_RESULT user=%s source=%s kw=%s found_msgs=%s", user.id, source.id, kw.word, len(result.messages))
+                local_found = 0
+                local_saved = 0
+                logger.info("HIST_SEARCH_KW_RESULT user=%s source=%s kw=%s found_msgs=%s", user.id, src.id, kw.word, len(result.messages))
                 for msg in result.messages:
                     text = getattr(msg, "message", "") or ""
                     if not text:
                         continue
                     async with AsyncSessionLocal() as s2:
                         if await _has_stopword(text, user, s2):
-                            logger.info("HIST_SEARCH_STOPWORD user=%s source=%s msg_id=%s", user.id, source.id, msg.id)
+                            logger.info("HIST_SEARCH_STOPWORD user=%s source=%s msg_id=%s", user.id, src.id, msg.id)
                             continue
                     kw_words = kw.word.lower().split()
                     if not all(w in text.lower() for w in kw_words):
-                        logger.info("HIST_SEARCH_KW_MISMATCH user=%s source=%s msg_id=%s kw=%s", user.id, source.id, msg.id, kw.word)
+                        logger.info("HIST_SEARCH_KW_MISMATCH user=%s source=%s msg_id=%s kw=%s", user.id, src.id, msg.id, kw.word)
                         continue
-                    saved_successfully = await _save_lead(user, source, entity, msg, text, kw.word, bot, is_historical_search=True)
+                    saved_successfully = await _save_lead(user, src, entity, msg, text, kw.word, bot, is_historical_search=True)
                     if saved_successfully:
-                        saved += 1
-                    found += 1
-                    logger.info("HIST_SEARCH_LEAD user=%s source=%s kw=%s msg_id=%s saved=%s", user.id, source.id, kw.word, msg.id, saved_successfully)
+                        local_saved += 1
+                    local_found += 1
+                    logger.info("HIST_SEARCH_LEAD user=%s source=%s kw=%s msg_id=%s saved=%s", user.id, src.id, kw.word, msg.id, saved_successfully)
+                return local_found, local_saved
             except Exception as e:
-                logger.warning("HIST_SEARCH_KW_ERROR user=%s source=%s kw=%s err=%s", user.id, source.id, kw.word, e)
+                logger.warning("HIST_SEARCH_KW_ERROR user=%s source=%s kw=%s err=%s", user.id, src.id, kw.word, e)
+                return 0, 0
 
-        if source != search_sources[-1]:
-            await asyncio.sleep(SEARCH_DELAY)
+    search_tasks = []
+    for src, entity in zip(search_sources, entities):
+        if entity is None or isinstance(entity, Exception):
+            continue
+        for kw in keywords:
+            search_tasks.append(_search_one(src, entity, kw))
+
+    results = await asyncio.gather(*search_tasks)
+    for f, s in results:
+        found += f
+        saved += s
 
     logger.info("HIST_SEARCH_END user=%s found=%s saved=%s", user.id, found, saved)
     try:
