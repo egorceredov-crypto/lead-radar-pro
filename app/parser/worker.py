@@ -28,6 +28,15 @@ _lead_batch_lock = asyncio.Lock()
 _LEAD_BATCH_DELAY = 30  # секунд между сводками
 _LEAD_BATCH_MIN_COUNT = 1  # минимальное количество лидов для отправки сводки
 
+# Кэш эффективных источников пользователей: user_id -> set(source_id)
+# Учитывает категории пользователя и fallback на все источники, если категории не совпадают.
+_user_effective_source_ids: dict[int, set[int]] = {}
+
+
+def invalidate_user_cache(user_id: int):
+    """Invalidate cached effective sources for a user (e.g. after category change)."""
+    _user_effective_source_ids.pop(user_id, None)
+
 
 async def _add_lead_to_batch(user_id: int, bot: Bot):
     """Добавляет лид в пакет для пользователя. Отправляет сводку, если прошло достаточно времени."""
@@ -85,6 +94,26 @@ async def _match_keywords(text: str, user: User, session) -> str | None:
         if kw.word.lower() in text_lower:
             return kw.word
     return None
+
+
+async def _get_user_effective_source_ids(user: User) -> set[int]:
+    """Возвращает set ID источников, которые пользователь должен получать.
+    Учитывает выбранные категории и fallback на все источники, если категории не совпадают."""
+    if user.id in _user_effective_source_ids:
+        return _user_effective_source_ids[user.id]
+    async with AsyncSessionLocal() as session:
+        sources_query = select(Source).where(Source.status == "active")
+        user_cats = (user.settings or {}).get("categories", []) if user.settings else []
+        if user_cats:
+            sources_query = sources_query.where(Source.category.in_(user_cats))
+        sources = (await session.execute(sources_query)).scalars().all()
+        if not sources and user_cats:
+            sources = (await session.execute(
+                select(Source).where(Source.status == "active")
+            )).scalars().all()
+        source_ids = {s.id for s in sources}
+    _user_effective_source_ids[user.id] = source_ids
+    return source_ids
 
 
 async def _has_stopword(text: str, user: User, session) -> bool:
@@ -166,10 +195,9 @@ async def _save_lead(user: User, source: Source, chat, msg, text: str, matched: 
 async def _historical_search_for_source(user: User, source: Source, client, bot: Bot):
     """Ищет сообщения за последние HISTORY_DAYS дней по всем ключевым словам
     пользователя в конкретном источнике (чате). Используется сразу после добавления чата."""
-    user_cats = (user.settings or {}).get("categories", []) if user.settings else []
-    if user_cats:
-        if not source.category or source.category not in user_cats:
-            return
+    effective_sources = await _get_user_effective_source_ids(user)
+    if source.id not in effective_sources:
+        return
 
     async with AsyncSessionLocal() as session:
         keywords = (await session.execute(
@@ -241,25 +269,17 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
     Если передан keyword, ищутся только совпадения по этому слову.
     """
     logger.info("HIST_SEARCH_START user_db_id=%s telegram_id=%s keyword=%s", user.id, user.telegram_id, keyword)
+    source_ids = await _get_user_effective_source_ids(user)
     async with AsyncSessionLocal() as session:
-        sources_query = select(Source).where(Source.status == "active")
-        user_cats = (user.settings or {}).get("categories", []) if user.settings else []
-        logger.info("HIST_SEARCH user=%s cats=%s", user.id, user_cats)
-        if user_cats:
-            sources_query = sources_query.where(Source.category.in_(user_cats))
-        sources = (await session.execute(sources_query)).scalars().all()
+        sources = (await session.execute(
+            select(Source).where(Source.id.in_(source_ids))
+        )).scalars().all()
         keywords_query = select(Keyword).where(Keyword.user_id == user.id)
         if keyword:
             keywords_query = keywords_query.where(Keyword.word == keyword)
         keywords = (await session.execute(keywords_query)).scalars().all()
         kw_words = [kw.word for kw in keywords]
         logger.info("HIST_SEARCH user=%s sources_count=%s keywords_count=%s kw_list=%s", user.id, len(sources), len(keywords), kw_words[:10])
-
-        if not sources and keywords and user_cats:
-            sources = (await session.execute(
-                select(Source).where(Source.status == "active")
-            )).scalars().all()
-            logger.info("HIST_SEARCH_FALLBACK user=%s reason=no_sources_for_categories total_sources=%s", user.id, len(sources))
 
     if not sources or not keywords:
         logger.info("HIST_SEARCH_SKIP user=%s reason=%s", user.id, "no_sources" if not sources else "no_keywords")
@@ -377,10 +397,12 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
         logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e)
 
 
-async def _monitor_new_messages(client, bot: Bot):
-    """Постоянный мониторинг новых сообщений во всех активных источниках."""
+async def _monitor_new_messages(client, user: User, bot: Bot):
+    """Постоянный мониторинг новых сообщений для конкретного пользователя."""
     monitor_logger = logging.getLogger("app.parser.monitor")
     monitor_logger.setLevel(logging.INFO)
+    effective_sources = await _get_user_effective_source_ids(user)
+    monitor_logger.info("Monitor started for user=%s telegram_id=%s sources=%d", user.id, user.telegram_id, len(effective_sources))
     
     async def handler(event):
         try:
@@ -395,14 +417,12 @@ async def _monitor_new_messages(client, bot: Bot):
                 monitor_logger.debug("Monitor: no chat_id, skipping")
                 return
 
-            monitor_logger.info("Monitor: new message in chat_id=%s, text=%s", chat_id, text[:100])
+            monitor_logger.debug("Monitor: new message in chat_id=%s text=%s", chat_id, text[:100])
 
             chat_username = getattr(chat, "username", None)
-            # Нормализуем chat_id: для каналов/супергрупп Telethon может добавлять префикс -100
             normalized_chat_id = chat_id
             if isinstance(normalized_chat_id, int) and normalized_chat_id < 0 and str(abs(normalized_chat_id)).startswith("100"):
                 normalized_chat_id = int(str(abs(normalized_chat_id))[3:])
-            # Находим источник (Source) по chat_id или username
             async with AsyncSessionLocal() as session:
                 query = select(Source).where(Source.status == "active")
                 if chat_username:
@@ -419,29 +439,19 @@ async def _monitor_new_messages(client, bot: Bot):
                     monitor_logger.debug("Monitor: no active source for chat_id=%s username=%s, skipping", chat_id, chat_username)
                     return
 
-                users = (await session.execute(
-                    select(User).where(User.subscription_status.in_(["free", "active"]))
-                )).scalars().all()
-                active_users = []
-                for user in users:
-                    from app.services.users import check_subscription
-                    if await check_subscription(session, user):
-                        active_users.append(user)
-                users = active_users
+                if source.id not in effective_sources:
+                    monitor_logger.debug("Monitor: source %s not in user %s effective sources, skipping", source.id, user.id)
+                    return
 
-            for user in users:
-                user_cats = (user.settings or {}).get("categories", []) if user.settings else []
-                if user_cats:
-                    if not source.category or source.category not in user_cats:
-                        continue
                 async with AsyncSessionLocal() as s2:
                     matched = await _match_keywords(text, user, s2)
                     if not matched:
-                        continue
+                        monitor_logger.debug("Monitor: no keyword match for user %s in source %s", user.id, source.id)
+                        return
                     if await _has_stopword(text, user, s2):
                         monitor_logger.debug("Stopword matched for user %s in chat %s", user.id, chat_id)
-                        continue
-                monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, getattr(user, 'id', user), getattr(source, 'id', source))
+                        return
+                monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, user.id, source.id)
                 saved = await _save_lead(user, source, chat, event.message, text, matched, bot)
                 if saved:
                     s = user.settings or {}
@@ -465,12 +475,25 @@ async def main(bot=None):
         return
 
     clients = []
+    client_users = []  # list of User objects matched to each client
     for session_name in sessions:
         try:
             client = await manager.connect(session_name)
             me = await client.get_me()
-            logger.info("Connected Telethon as %s (session=%s)", getattr(me, "username", "?"), session_name)
+            tg_id = getattr(me, "id", None)
+            logger.info("Connected Telethon as %s (id=%s, session=%s)", getattr(me, "username", "?"), tg_id, session_name)
+            matched_user = None
+            if tg_id is not None:
+                async with AsyncSessionLocal() as session:
+                    matched_user = (await session.execute(
+                        select(User).where(User.telegram_id == int(tg_id))
+                    )).scalar_one_or_none()
+            if matched_user:
+                logger.info("Session %s matched to user id=%s telegram_id=%s", session_name, matched_user.id, matched_user.telegram_id)
+            else:
+                logger.warning("Session %s (telegram_id=%s) is not linked to any user in DB", session_name, tg_id)
             clients.append(client)
+            client_users.append(matched_user)
         except Exception as e:
             logger.exception("Failed to connect session %s: %s", session_name, e)
 
@@ -478,33 +501,47 @@ async def main(bot=None):
         logger.warning("No Telethon clients connected. Parsing disabled.")
         return
 
-    client = clients[0]
-
-    # Проверка участия в активных источниках
+    # Проверка участия в активных источниках для всех клиентов
     try:
         async with AsyncSessionLocal() as session:
             sources = (await session.execute(
                 select(Source).where(Source.status == "active")
             )).scalars().all()
-            missing = []
-            for src in sources:
-                try:
-                    entity = await client.get_entity(src.chat_id or src.username)
-                    if not getattr(entity, "id", None):
+            for idx, cl in enumerate(clients):
+                missing = []
+                for src in sources:
+                    try:
+                        entity = await cl.get_entity(src.chat_id or src.username)
+                        if not getattr(entity, "id", None):
+                            missing.append(f"{src.id}:{src.title or src.username}")
+                    except Exception:
                         missing.append(f"{src.id}:{src.title or src.username}")
-                except Exception:
-                    missing.append(f"{src.id}:{src.title or src.username}")
-            if missing:
-                logger.warning("Parser account is NOT in these sources: %s", ", ".join(missing))
-            else:
-                logger.info("Parser account is in all %d active sources", len(sources))
+                if missing:
+                    logger.warning("Parser account %d is NOT in these sources: %s", idx + 1, ", ".join(missing))
+                else:
+                    logger.info("Parser account %d is in all %d active sources", idx + 1, len(sources))
     except Exception:
         logger.exception("Startup source membership check failed")
 
-    # Постоянный мониторинг новых сообщений на всех подключённых клиентах
+    # Build cache of effective source IDs for all users
+    async with AsyncSessionLocal() as session:
+        users = (await session.execute(
+            select(User).where(User.subscription_status.in_(["free", "active"]))
+        )).scalars().all()
+        for user in users:
+            from app.services.users import check_subscription
+            if await check_subscription(session, user):
+                source_ids = await _get_user_effective_source_ids(user)
+                logger.info("User %s effective sources: %d", user.id, len(source_ids))
+
+    # Постоянный мониторинг новых сообщений: каждый клиент → только для своего пользователя
     for idx, cl in enumerate(clients):
-        asyncio.create_task(_monitor_new_messages(cl, bot))
-        logger.info("New-message monitoring started for client %d/%d", idx + 1, len(clients))
+        user = client_users[idx]
+        if user is None:
+            logger.warning("Skipping monitoring for client %d: no linked user", idx + 1)
+            continue
+        asyncio.create_task(_monitor_new_messages(cl, user, bot))
+        logger.info("New-message monitoring started for user=%s (client %d/%d)", user.id, idx + 1, len(clients))
 
     # Периодический исторический поиск для всех пользователей
     async def periodic_historical():
@@ -521,7 +558,15 @@ async def main(bot=None):
                             active_users.append(user)
                     users = active_users
                 for user in users:
-                    await _historical_search_for_user(user, client, bot)
+                    client_idx = None
+                    for i, u in enumerate(client_users):
+                        if u is not None and u.id == user.id:
+                            client_idx = i
+                            break
+                    if client_idx is not None:
+                        await _historical_search_for_user(user, clients[client_idx], bot)
+                    else:
+                        await _historical_search_for_user(user, clients[0], bot)
                     await asyncio.sleep(0.1)
             except Exception:
                 logger.exception("Periodic historical search error")

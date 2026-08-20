@@ -464,6 +464,8 @@ async def cb_cat_toggle(cb: CallbackQuery):
         session.add(user)
         await session.commit()
         logger.info("CAT_TOGGLE: saved cats=%s", cats)
+        from app.parser.worker import invalidate_user_cache
+        invalidate_user_cache(user.id)
     text = (
         "<b>Категории</b>\n\n"
         "Нажимай на категории, чтобы выбрать/убрать.\n"
@@ -487,6 +489,8 @@ async def cb_cat_save(cb: CallbackQuery):
         parse_mode="HTML",
     )
     from app.services.parser_runner import run_historical_for_user
+    from app.parser.worker import invalidate_user_cache
+    invalidate_user_cache(user.id)
     await run_historical_for_user(user.id)
     await cb.answer()
 
@@ -1045,6 +1049,8 @@ async def handle_text(message: Message):
                 session.add(user)
                 await session.commit()
                 await message.answer(CATEGORY_ADDED.format(name=name))
+                from app.parser.worker import invalidate_user_cache
+                invalidate_user_cache(user.id)
             else:
                 await message.answer("Такая категория уже есть.")
             WAITING.pop(message.from_user.id, None)
@@ -1065,6 +1071,8 @@ async def handle_text(message: Message):
                 session.add(user)
                 await session.commit()
                 await message.answer(CATEGORY_DELETED.format(name=name))
+                from app.parser.worker import invalidate_user_cache
+                invalidate_user_cache(user.id)
             else:
                 await message.answer("Категория не найдена.")
             WAITING.pop(message.from_user.id, None)
@@ -1102,6 +1110,8 @@ async def handle_text(message: Message):
                 session.add(user)
                 await session.commit()
                 await message.answer(CATEGORY_EDITED.format(name=new_name))
+                from app.parser.worker import invalidate_user_cache
+                invalidate_user_cache(user.id)
             WAITING.pop(message.from_user.id, None)
             if SEARCH_MODE.get(message.from_user.id):
                 await _open_category_search(message.from_user.id, message)
