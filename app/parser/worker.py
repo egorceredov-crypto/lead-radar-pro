@@ -329,8 +329,7 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
             except Exception as e:
                 logger.warning("HIST_SEARCH_KW_ERROR user=%s source=%s kw=%s err=%s", user.id, source.id, kw.word, e)
 
-        if keyword and search_sources is not None and source in search_sources and source != search_sources[-1]:
-            import asyncio
+        if source != search_sources[-1]:
             await asyncio.sleep(SEARCH_DELAY)
 
     logger.info("HIST_SEARCH_END user=%s found=%s saved=%s", user.id, found, saved)
@@ -486,6 +485,7 @@ async def main(bot=None):
                     users = active_users
                 for user in users:
                     await _historical_search_for_user(user, client, bot)
+                    await asyncio.sleep(0.1)
             except Exception:
                 logger.exception("Periodic historical search error")
             await asyncio.sleep(3600)  # раз в час
