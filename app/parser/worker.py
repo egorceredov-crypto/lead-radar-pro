@@ -428,16 +428,12 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
         try:
             text = getattr(event.message, "message", None) or getattr(event.message, "text", None) or ""
             if not text:
-                monitor_logger.debug("Monitor: empty text, skipping")
                 return
 
             chat = await event.get_chat()
             chat_id = getattr(chat, "id", None)
             if chat_id is None:
-                monitor_logger.debug("Monitor: no chat_id, skipping")
                 return
-
-            monitor_logger.debug("Monitor: new message in chat_id=%s text=%s", chat_id, text[:100])
 
             chat_username = getattr(chat, "username", None)
             normalized_chat_id = chat_id
@@ -456,32 +452,25 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                     query = query.where(Source.chat_id == normalized_chat_id)
                 source = (await session.execute(query)).scalar_one_or_none()
                 if not source:
-                    monitor_logger.debug("Monitor: no active source for chat_id=%s username=%s, skipping", chat_id, chat_username)
                     return
 
                 fresh_user = await session.get(User, user_id)
                 if fresh_user is None:
                     monitor_logger.warning("Monitor: user %s not found, skipping", user_id)
                     return
-                effective_sources = await _get_user_effective_source_ids(fresh_user)
-                if source.id not in effective_sources:
-                    monitor_logger.debug("Monitor: source %s not in user %s effective sources, skipping", source.id, user_id)
-                    return
 
                 async with AsyncSessionLocal() as s2:
                     matched = await _match_keywords(text, fresh_user, s2)
                     if not matched:
-                        monitor_logger.debug("Monitor: no keyword match for user %s in source %s", user_id, source.id)
                         return
                     if await _has_stopword(text, fresh_user, s2):
-                        monitor_logger.debug("Stopword matched for user %s in chat %s", user_id, chat_id)
                         return
-                monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, user_id, source.id)
-                saved = await _save_lead(fresh_user, source, chat, event.message, text, matched, bot)
-                if saved:
-                    s = fresh_user.settings or {}
-                    if s.get("notifications", True):
-                        await _add_lead_to_batch(fresh_user.telegram_id, bot)
+            monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, user_id, source.id)
+            saved = await _save_lead(fresh_user, source, chat, event.message, text, matched, bot)
+            if saved:
+                s = fresh_user.settings or {}
+                if s.get("notifications", True):
+                    await _add_lead_to_batch(fresh_user.telegram_id, bot)
         except Exception:
             monitor_logger.exception("Monitor handler error")
 
