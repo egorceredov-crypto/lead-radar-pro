@@ -458,6 +458,8 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                 if fresh_user is None:
                     monitor_logger.warning("Monitor: user %s not found, skipping", user_id)
                     return
+                if source.id not in effective_sources:
+                    return
 
                 async with AsyncSessionLocal() as s2:
                     matched = await _match_keywords(text, fresh_user, s2)
