@@ -1,7 +1,9 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
+
     bot_token: str
     api_id: str | None = None
     api_hash: str | None = None
@@ -24,9 +26,6 @@ class Settings(BaseSettings):
     yookassa_shop_id: str | None = None
     yookassa_secret_key: str | None = None
     yookassa_return_url: str | None = None
-
-    class Config:
-        env_file = ".env"
 
 
 settings = Settings()
