@@ -55,3 +55,11 @@ pip-download-temp/
 app/tools/
 TODO.md
 CHANGELOG.md
+
+# Sensitive / temp / local artifacts
+leads_backup.csv
+monitor_matches.txt
+monitor_matches_new.txt
+check_*.py
+fix_*.py
+run_search_*.py
