@@ -557,14 +557,19 @@ async def main(bot=None):
             source_ids = await _get_user_effective_source_ids(user)
             logger.info("User %s effective sources: %d", user.id, len(source_ids))
 
-    # Постоянный мониторинг новых сообщений: все пользователи на одном проверенном клиенте
-    monitor_client = clients[0] if clients else None
-    if monitor_client is None:
-        logger.warning("No Telethon clients connected. Monitoring disabled.")
-    else:
-        for user in users:
-            asyncio.create_task(_monitor_new_messages(monitor_client, user.id, bot))
-            logger.info("New-message monitoring started for user=%s telegram_id=%s", user.id, user.telegram_id)
+    # Постоянный мониторинг новых сообщений: все пользователи через доступные клиенты, без фильтра по подписке
+    for user in users:
+        client_idx = None
+        for i, u in enumerate(client_users):
+            if u is not None and u.id == user.id:
+                client_idx = i
+                break
+        if client_idx is not None:
+            asyncio.create_task(_monitor_new_messages(clients[client_idx], user.id, bot))
+            logger.info("New-message monitoring started for user=%s telegram_id=%s session_idx=%s", user.id, user.telegram_id, client_idx)
+        else:
+            asyncio.create_task(_monitor_new_messages(clients[0], user.id, bot))
+            logger.info("New-message monitoring started for user=%s telegram_id=%s fallback_session_idx=0", user.id, user.telegram_id)
 
     # Периодический исторический поиск для всех пользователей
     async def periodic_historical():
