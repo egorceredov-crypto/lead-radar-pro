@@ -47,12 +47,19 @@ class TelethonClientManager:
         owner = getattr(settings, 'owner_session', None)
         if owner:
             p = os.path.join(self.sessions_dir, owner)
-            return [owner] if os.path.exists(p) else []
+            if os.path.exists(p):
+                return [owner]
+        session_string = getattr(settings, 'session_string', None)
+        if session_string:
+            return ["string"]
         if not os.path.exists(self.sessions_dir):
             return []
         return [f for f in os.listdir(self.sessions_dir) if not f.startswith('.') and f.endswith('.session') and '.session-' not in f]
 
     def list_all_sessions(self) -> list:
+        session_string = getattr(settings, 'session_string', None)
+        if session_string:
+            return ["string"]
         if not os.path.exists(self.sessions_dir):
             return []
         return [f for f in os.listdir(self.sessions_dir) if not f.startswith('.') and f.endswith('.session') and '.session-' not in f]
