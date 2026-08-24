@@ -120,7 +120,9 @@ async def _get_referral_link(telegram_id: int) -> str:
     import secrets
     async with AsyncSessionLocal() as session:
         user = await _get_user(session, telegram_id)
-        ref = (await session.execute(select(Referral).where(Referral.owner_id == user.id))).scalar_one_or_none()
+        ref = (await session.execute(
+            select(Referral).where(Referral.owner_id == user.id).limit(1)
+        )).scalar_one_or_none()
         if not ref:
             ref = Referral(owner_id=user.id, code=secrets.token_hex(4))
             session.add(ref)
@@ -411,7 +413,7 @@ async def reply_profile(message: Message):
         leads_count = (await session.execute(
             select(func.count()).select_from(Lead).where(Lead.user_id == user.id)
         )).scalar_one()
-        ref = (await session.execute(select(Referral).where(Referral.owner_id == user.id))).scalar_one_or_none()
+        ref = (await session.execute(select(Referral).where(Referral.owner_id == user.id).limit(1))).scalar_one_or_none()
         referrals = ref.registrations if ref else 0
         kw_limit = get_keyword_limit(user)
         kw_used = (await session.execute(
@@ -749,7 +751,7 @@ async def cb_prof(cb: CallbackQuery):
             leads_count = (await session.execute(
                 select(func.count()).select_from(Lead).where(Lead.user_id == user.id)
             )).scalar_one()
-            ref = (await session.execute(select(Referral).where(Referral.owner_id == user.id))).scalar_one_or_none()
+            ref = (await session.execute(select(Referral).where(Referral.owner_id == user.id).limit(1))).scalar_one_or_none()
             referrals = ref.registrations if ref else 0
             kw_limit = get_keyword_limit(user)
             kw_used = (await session.execute(
@@ -1344,11 +1346,15 @@ async def handle_text(message: Message):
                                     status="active",
                                 )
                                 session.add(src)
+                                await session.flush()
                                 new_source_ids.append(src.id)
                                 added += 1
                             except Exception as e:
                                 errors.append(f"{line}: ошибка сохранения ({str(e)[:40]})")
                         await session.commit()
+                        
+                        from app.parser.worker import invalidate_all_user_caches
+                        invalidate_all_user_caches()
                     break
                 except Exception as e:
                     if attempt < max_retries - 1:

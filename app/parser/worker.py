@@ -38,6 +38,11 @@ def invalidate_user_cache(user_id: int):
     _user_effective_source_ids.pop(user_id, None)
 
 
+def invalidate_all_user_caches():
+    """Invalidate cached effective sources for all users (e.g. after sources change)."""
+    _user_effective_source_ids.clear()
+
+
 async def _add_lead_to_batch(user_id: int, bot: Bot):
     """Добавляет лид в пакет для пользователя. Отправляет сводку, если прошло достаточно времени."""
     async with _lead_batch_lock:

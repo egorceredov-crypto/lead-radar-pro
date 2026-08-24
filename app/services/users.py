@@ -119,7 +119,7 @@ async def get_or_create_user(session: AsyncSession, telegram_id: int, username: 
             )
             user_changed = True
 
-        ref_res = await session.execute(select(Referral).where(Referral.owner_id == user.id))
+        ref_res = await session.execute(select(Referral).where(Referral.owner_id == user.id).limit(1))
         if not ref_res.scalar_one_or_none():
             await session.execute(
                 text("INSERT OR IGNORE INTO referrals (owner_id, code, registrations, clicks, bonus, created_at) VALUES (:oid, :code, 0, 0, 0, :ts)"),
