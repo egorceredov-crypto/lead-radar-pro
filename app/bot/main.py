@@ -10,7 +10,6 @@ from aiogram.exceptions import TelegramConflictError
 
 print("BOT_ENTRY_START", flush=True)
 
-from config import settings
 from app.database.session import init_db
 from app.bot.handlers_sessions import router as sessions_router
 from app.bot.handlers_parse import router as parse_router
@@ -86,7 +85,7 @@ class LoggingMiddleware(BaseMiddleware):
                     pass
 
 
-def _build_bot():
+def _build_bot(settings):
     session = None
     proxy_host = getattr(settings, "proxy_host", None)
     proxy_port = getattr(settings, "proxy_port", None)
@@ -102,23 +101,36 @@ def _build_bot():
     return Bot(token=settings.bot_token, session=session)
 
 
-bot = _build_bot()
-dp = Dispatcher()
-router = Router()
-router.include_router(payments_router)
-router.include_router(user_router)
-router.include_router(sessions_router)
-router.include_router(parse_router)
-dp.include_router(router)
-dp.message.middleware(LoggingMiddleware())
-dp.callback_query.middleware(LoggingMiddleware())
-
-
 async def main():
     logger.info("Starting bot...")
     if not _acquire_bot_lock():
         logger.error("Another bot instance is already running. Exiting.")
         sys.exit(1)
+    
+    try:
+        from config import settings
+    except Exception as e:
+        logger.exception("Configuration error: %s", e)
+        logger.error("Please ensure BOT_TOKEN, API_ID, API_HASH, and SESSION_STRING are set in .env or environment variables.")
+        _release_bot_lock()
+        sys.exit(1)
+    
+    try:
+        bot = _build_bot(settings)
+    except Exception as e:
+        logger.exception("Failed to build bot: %s", e)
+        _release_bot_lock()
+        sys.exit(1)
+    
+    dp = Dispatcher()
+    router = Router()
+    router.include_router(payments_router)
+    router.include_router(user_router)
+    router.include_router(sessions_router)
+    router.include_router(parse_router)
+    dp.include_router(router)
+    dp.message.middleware(LoggingMiddleware())
+    dp.callback_query.middleware(LoggingMiddleware())
     
     try:
         await init_db()
