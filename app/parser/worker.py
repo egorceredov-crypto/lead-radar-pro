@@ -477,18 +477,21 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
             monitor_logger.info("NEW_LEAD user=%s keyword=%s source=%s message_id=%s", user_id, matched, source.id, event.message.id)
             monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, user_id, source.id)
             saved = await _save_lead(fresh_user, source, chat, event.message, text, matched, bot)
+            monitor_logger.info("DEBUG: after _save_lead saved=%s", saved)
             if saved:
                 s = fresh_user.settings or {}
+                monitor_logger.info("DEBUG: notifications setting=%s", s.get("notifications", True))
                 if s.get("notifications", True):
-                    await _add_lead_to_batch(fresh_user.telegram_id, bot)
+                    monitor_logger.info("DEBUG: sending notification to user %s", fresh_user.telegram_id)
                     try:
+                        await _add_lead_to_batch(fresh_user.telegram_id, bot)
                         await bot.send_message(
                             fresh_user.telegram_id,
                             f"🔎 Новый лид: {matched}\nПосмотреть в /results",
                         )
                         monitor_logger.info("LEAD_NOTIFICATION_SENT user=%s keyword=%s", fresh_user.telegram_id, matched)
                     except Exception as e:
-                        monitor_logger.error("Failed to send immediate lead notification to user %s: %s", fresh_user.telegram_id, e)
+                        monitor_logger.error("LEAD_NOTIFICATION_ERROR user=%s error=%s", fresh_user.telegram_id, e)
         except Exception:
             monitor_logger.exception("Monitor handler error")
 
