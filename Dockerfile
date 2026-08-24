@@ -8,7 +8,10 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app
 RUN chmod +x /app/docker-entrypoint.sh
+RUN mkdir -p /app/data /app/logs /app/sessions
 ENV PYTHONUNBUFFERED=1
 LABEL description="Lead Radar PRO Bot + Parser"
+EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=5s CMD python -c "import sys; sys.exit(0)"
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["python", "-m", "app.manage", "bot"]
