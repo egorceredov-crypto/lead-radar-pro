@@ -1,10 +1,12 @@
 import asyncio
 import logging
+import os
 import sys
 from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message, CallbackQuery
 from aiogram import BaseMiddleware
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.exceptions import TelegramConflictError
 
 print("BOT_ENTRY_START", flush=True)
 
@@ -25,6 +27,41 @@ logging.basicConfig(
 for _name in ("aiogram", "app.bot", "app.parser", "app.database"):
     logging.getLogger(_name).setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
+
+BOT_LOCK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bot.pid")
+
+
+def _acquire_bot_lock() -> bool:
+    try:
+        if os.path.exists(BOT_LOCK_FILE):
+            with open(BOT_LOCK_FILE, "r") as f:
+                content = f.read().strip()
+            if content and content.isdigit():
+                pid = int(content)
+                try:
+                    os.kill(pid, 0)
+                    logger.warning("Another bot instance is already running (pid=%s). Exiting.", pid)
+                    return False
+                except ProcessLookupError:
+                    logger.info("Stale bot lock file found (pid=%s). Removing.", pid)
+                    os.remove(BOT_LOCK_FILE)
+                except PermissionError:
+                    logger.warning("Another bot instance is already running (pid=%s). Exiting.", pid)
+                    return False
+        with open(BOT_LOCK_FILE, "w") as f:
+            f.write(str(os.getpid()))
+        return True
+    except Exception as e:
+        logger.warning("Bot lock check failed: %s", e)
+        return True
+
+
+def _release_bot_lock():
+    try:
+        if os.path.exists(BOT_LOCK_FILE):
+            os.remove(BOT_LOCK_FILE)
+    except Exception:
+        pass
 
 
 class LoggingMiddleware(BaseMiddleware):
@@ -79,6 +116,10 @@ dp.callback_query.middleware(LoggingMiddleware())
 
 async def main():
     logger.info("Starting bot...")
+    if not _acquire_bot_lock():
+        logger.error("Another bot instance is already running. Exiting.")
+        sys.exit(1)
+    
     try:
         await init_db()
     except Exception as e:
@@ -98,12 +139,18 @@ async def main():
     task = asyncio.create_task(_start_parser())
     logger.info("Parser worker started, task id=%s", id(task))
     
-    while True:
-        try:
-            await dp.start_polling(bot)
-        except Exception as e:
-            logger.error("Polling crashed: %s", e)
-            await asyncio.sleep(5)
+    try:
+        while True:
+            try:
+                await dp.start_polling(bot)
+            except TelegramConflictError:
+                logger.error("TelegramConflictError: another instance is polling with the same token. Waiting 30s before retry.")
+                await asyncio.sleep(30)
+            except Exception as e:
+                logger.error("Polling crashed: %s", e)
+                await asyncio.sleep(5)
+    finally:
+        _release_bot_lock()
 
 
 if __name__ == '__main__':
