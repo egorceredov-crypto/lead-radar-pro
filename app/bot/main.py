@@ -37,6 +37,9 @@ def _acquire_bot_lock() -> bool:
                 content = f.read().strip()
             if content and content.isdigit():
                 pid = int(content)
+                if pid == os.getpid():
+                    logger.info("Bot lock already held by current process (pid=%s). Continuing.", pid)
+                    return True
                 try:
                     os.kill(pid, 0)
                     logger.warning("Another bot instance is already running (pid=%s). Exiting.", pid)
