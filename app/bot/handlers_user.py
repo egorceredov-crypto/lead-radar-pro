@@ -69,8 +69,11 @@ def is_admin(user_id: int) -> bool:
     return False
 
 
-async def _get_user(session, tg_id: int):
-    return await get_user(session, tg_id)
+async def _get_user(session, tg_id: int, username: str = None, first_name: str = None, last_name: str = None):
+    user = await get_user(session, tg_id)
+    if not user:
+        user = await get_or_create_user(session, tg_id, username=username, first_name=first_name, last_name=last_name)
+    return user
 
 
 def _reply_kb(user_id: int):
