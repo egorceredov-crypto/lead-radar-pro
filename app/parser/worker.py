@@ -610,6 +610,10 @@ async def main(bot=None):
     asyncio.create_task(periodic_historical())
     logger.info("Periodic historical search started (every 1h)")
 
+    for idx, cl in enumerate(clients):
+        asyncio.create_task(cl.run_until_disconnected())
+        logger.info("Telethon client %s started event loop", idx)
+
     try:
         while True:
             await asyncio.sleep(60)
