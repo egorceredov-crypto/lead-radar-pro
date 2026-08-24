@@ -51,11 +51,12 @@ async def _add_lead_to_batch(user_id: int, bot: Bot):
         _lead_batches[user_id]["count"] += 1
         batch = _lead_batches[user_id]
         now = time.monotonic()
-        if batch["count"] >= _LEAD_BATCH_MIN_COUNT and (now - batch["last_sent"]) >= _LEAD_BATCH_DELAY:
-            count = batch["count"]
-            batch["count"] = 0
-            batch["last_sent"] = now
-            asyncio.create_task(_send_lead_batch(user_id, bot, count))
+        if batch["count"] >= _LEAD_BATCH_MIN_COUNT:
+            if batch["last_sent"] == 0.0 or (now - batch["last_sent"]) >= _LEAD_BATCH_DELAY:
+                count = batch["count"]
+                batch["count"] = 0
+                batch["last_sent"] = now
+                asyncio.create_task(_send_lead_batch(user_id, bot, count))
 
 
 async def _send_lead_batch(user_id: int, bot: Bot, count: int):
@@ -65,7 +66,7 @@ async def _send_lead_batch(user_id: int, bot: Bot, count: int):
             user_id,
             f"🔎 Найдены новые лиды: {count}\nПосмотреть в /results",
         )
-        logger.info("Sent lead batch notification to user %s: %d leads", user_id, count)
+        logger.info("LEAD_NOTIFICATION_SENT user=%s count=%s", user_id, count)
     except Exception as e:
         logger.error("Failed to send lead batch notification to user %s: %s", user_id, e)
 
@@ -212,6 +213,7 @@ async def _save_lead(user: User, source: Source, chat, msg, text: str, matched: 
         )
         session.add(notif)
         await session.commit()
+        logger.info("NEW_LEAD user=%s keyword=%s source=%s message_id=%s", user.id, matched, source.id, msg.id)
         logger.info("Lead saved: user=%s, source=%s, keyword=%s, msg_id=%s", user.id, source.id, matched, msg.id)
         return True
 
@@ -472,6 +474,7 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                         return
                     if await _has_stopword(text, fresh_user, s2):
                         return
+            monitor_logger.info("NEW_LEAD user=%s keyword=%s source=%s message_id=%s", user_id, matched, source.id, event.message.id)
             monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, user_id, source.id)
             saved = await _save_lead(fresh_user, source, chat, event.message, text, matched, bot)
             if saved:
