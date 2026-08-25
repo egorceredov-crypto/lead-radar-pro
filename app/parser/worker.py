@@ -485,6 +485,7 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                     monitor_logger.info("DEBUG: sending notification to user %s", fresh_user.telegram_id)
                     try:
                         await _add_lead_to_batch(fresh_user.telegram_id, bot)
+                        logger.info("REALTIME_NOTIFY user=%s keyword=%s", fresh_user.telegram_id, matched)
                         await bot.send_message(
                             fresh_user.telegram_id,
                             f"🔎 Новый лид: {matched}\nПосмотреть в /results",
