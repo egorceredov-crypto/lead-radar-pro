@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import logging
 import time
-from sqlalchemy import select
+from sqlalchemy import func, select
 from telethon import events
 from telethon.tl.functions.messages import SearchRequest
 from telethon.tl.types import InputMessagesFilterEmpty
@@ -43,10 +43,36 @@ def invalidate_all_user_caches():
     _user_effective_source_ids.clear()
 
 
+_source_last_checked: dict[int, int] = {}
+
+
+async def _get_last_checked_message_id(source_id: int) -> int:
+    """Get the last checked message ID for a source, initializing from DB if needed."""
+    if source_id in _source_last_checked:
+        return _source_last_checked[source_id]
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(func.max(ChatMessage.telegram_message_id)).where(
+                ChatMessage.chat_id == source_id
+            )
+        )
+        max_id = result.scalar_one_or_none() or 0
+    _source_last_checked[source_id] = max_id
+    return max_id
+
+
+def _update_last_checked_message_id(source_id: int, message_id: int):
+    """Update the last checked message ID for a source."""
+    current = _source_last_checked.get(source_id, 0)
+    if message_id > current:
+        _source_last_checked[source_id] = message_id
+
+
 async def _poll_new_messages_for_user(user: User, client, bot: Bot):
     """Проверяет новые сообщения в источниках пользователя."""
     source_ids = await _get_user_effective_source_ids(user)
     if not source_ids:
+        logger.info("POLLING_SKIP user=%s reason=no_sources", user.id)
         return
 
     async with AsyncSessionLocal() as session:
@@ -55,6 +81,7 @@ async def _poll_new_messages_for_user(user: User, client, bot: Bot):
         )).scalars().all()
 
     if not sources:
+        logger.info("POLLING_SKIP user=%s reason=no_sources_resolved", user.id)
         return
 
     async with AsyncSessionLocal() as session:
@@ -63,8 +90,11 @@ async def _poll_new_messages_for_user(user: User, client, bot: Bot):
         )).scalars().all()
 
     if not keywords:
+        logger.info("POLLING_SKIP user=%s reason=no_keywords", user.id)
         return
 
+    total_new_messages = 0
+    total_matched = 0
     new_leads_count = 0
 
     for source in sources:
@@ -75,14 +105,19 @@ async def _poll_new_messages_for_user(user: User, client, bot: Bot):
             continue
 
         try:
-            messages = await client.get_messages(entity, limit=50)
+            last_checked_id = await _get_last_checked_message_id(source.id)
+            messages = await client.get_messages(entity, limit=100)
+            new_in_source = [m for m in messages if getattr(m, "id", 0) > last_checked_id]
+            logger.info("POLLING_SOURCE user=%s source=%s last_checked_id=%s fetched=%s new=%s", user.id, source.id, last_checked_id, len(messages), len(new_in_source))
+            total_new_messages += len(new_in_source)
         except Exception as e:
             logger.warning("Polling: cannot get messages for source %s user %s: %s", source.id, user.id, e)
             continue
 
-        for msg in messages:
+        for msg in new_in_source:
             text = getattr(msg, "message", "") or ""
             if not text:
+                _update_last_checked_message_id(source.id, msg.id)
                 continue
 
             async with AsyncSessionLocal() as s2:
@@ -93,18 +128,25 @@ async def _poll_new_messages_for_user(user: User, client, bot: Bot):
                     )
                 )).scalar_one_or_none()
                 if dup:
+                    _update_last_checked_message_id(source.id, msg.id)
                     continue
 
             async with AsyncSessionLocal() as s3:
                 matched = await _match_keywords(text, user, s3)
                 if not matched:
+                    _update_last_checked_message_id(source.id, msg.id)
                     continue
                 if await _has_stopword(text, user, s3):
+                    _update_last_checked_message_id(source.id, msg.id)
                     continue
 
             saved = await _save_lead(user, source, entity, msg, text, matched, bot)
             if saved:
                 new_leads_count += 1
+                total_matched += 1
+            _update_last_checked_message_id(source.id, msg.id)
+
+    logger.info("POLLING_CYCLE user=%s new_messages=%s matched=%s saved=%s", user.id, total_new_messages, total_matched, new_leads_count)
 
     if new_leads_count > 0:
         try:
