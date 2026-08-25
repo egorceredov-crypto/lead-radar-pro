@@ -43,6 +43,111 @@ def invalidate_all_user_caches():
     _user_effective_source_ids.clear()
 
 
+async def _poll_new_messages_for_user(user: User, client, bot: Bot):
+    """Проверяет новые сообщения в источниках пользователя."""
+    source_ids = await _get_user_effective_source_ids(user)
+    if not source_ids:
+        return
+
+    async with AsyncSessionLocal() as session:
+        sources = (await session.execute(
+            select(Source).where(Source.id.in_(source_ids))
+        )).scalars().all()
+
+    if not sources:
+        return
+
+    async with AsyncSessionLocal() as session:
+        keywords = (await session.execute(
+            select(Keyword).where(Keyword.user_id == user.id)
+        )).scalars().all()
+
+    if not keywords:
+        return
+
+    new_leads_count = 0
+
+    for source in sources:
+        try:
+            entity = await client.get_entity(source.chat_id or source.username)
+        except Exception as e:
+            logger.warning("Polling: cannot resolve source %s for user %s: %s", source.id, user.id, e)
+            continue
+
+        try:
+            messages = await client.get_messages(entity, limit=50)
+        except Exception as e:
+            logger.warning("Polling: cannot get messages for source %s user %s: %s", source.id, user.id, e)
+            continue
+
+        for msg in messages:
+            text = getattr(msg, "message", "") or ""
+            if not text:
+                continue
+
+            async with AsyncSessionLocal() as s2:
+                dup = (await s2.execute(
+                    select(ChatMessage).where(
+                        ChatMessage.telegram_message_id == msg.id,
+                        ChatMessage.user_id == user.id,
+                    )
+                )).scalar_one_or_none()
+                if dup:
+                    continue
+
+            async with AsyncSessionLocal() as s3:
+                matched = await _match_keywords(text, user, s3)
+                if not matched:
+                    continue
+                if await _has_stopword(text, user, s3):
+                    continue
+
+            saved = await _save_lead(user, source, entity, msg, text, matched, bot)
+            if saved:
+                new_leads_count += 1
+
+    if new_leads_count > 0:
+        try:
+            await bot.send_message(
+                user.telegram_id,
+                f"🔎 Найдены новые лиды: {new_leads_count}\nПосмотреть в /results",
+            )
+            logger.info("POLLING_NOTIFICATION_SENT user=%s count=%s", user.id, new_leads_count)
+        except Exception as e:
+            logger.error("POLLING_NOTIFICATION_ERROR user=%s error=%s", user.id, e)
+
+
+async def _periodic_polling(clients, client_users, bot):
+    """Проверяет новые сообщения каждую минуту для всех пользователей."""
+    while True:
+        try:
+            async with AsyncSessionLocal() as session:
+                users = (await session.execute(
+                    select(User).where(User.subscription_status.in_(["free", "active"]))
+                )).scalars().all()
+                active_users = []
+                for user in users:
+                    from app.services.users import check_subscription
+                    if await check_subscription(session, user):
+                        active_users.append(user)
+                users = active_users
+
+            for user in users:
+                client_idx = None
+                for i, u in enumerate(client_users):
+                    if u is not None and u.id == user.id:
+                        client_idx = i
+                        break
+                if client_idx is not None:
+                    await _poll_new_messages_for_user(user, clients[client_idx], bot)
+                else:
+                    await _poll_new_messages_for_user(user, clients[0], bot)
+                await asyncio.sleep(0.1)
+        except Exception:
+            logger.exception("Periodic polling error")
+        await asyncio.sleep(60)
+
+
 async def _add_lead_to_batch(user_id: int, bot: Bot):
     """Добавляет лид в пакет для пользователя. Отправляет сводку, если прошло достаточно времени."""
     async with _lead_batch_lock:
@@ -614,6 +719,9 @@ async def main(bot=None):
 
     asyncio.create_task(periodic_historical())
     logger.info("Periodic historical search started (every 1h)")
+
+    asyncio.create_task(_periodic_polling(clients, client_users, bot))
+    logger.info("Periodic new-message polling started (every 1m)")
 
     for idx, cl in enumerate(clients):
         asyncio.create_task(cl.run_until_disconnected())
