@@ -477,6 +477,7 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
             monitor_logger.info("NEW_LEAD user=%s keyword=%s source=%s message_id=%s", user_id, matched, source.id, event.message.id)
             monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, user_id, source.id)
             saved = await _save_lead(fresh_user, source, chat, event.message, text, matched, bot)
+            print(f"REALTIME_DEBUG after_save_lead user={user_id} saved={saved}", flush=True)
             monitor_logger.info("DEBUG: after _save_lead saved=%s", saved)
             if saved:
                 s = fresh_user.settings or {}
