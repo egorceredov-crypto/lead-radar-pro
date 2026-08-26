@@ -43,6 +43,152 @@ def invalidate_all_user_caches():
     _user_effective_source_ids.clear()
 
 
+# ============ Reminder state helpers ============
+
+def _get_reminder_settings(user: User) -> dict:
+    settings = getattr(user, "settings", None) or {}
+    if not isinstance(settings, dict):
+        settings = {}
+    return settings
+
+
+def _set_reminder_settings(user: User, settings: dict):
+    user.settings = settings
+
+
+async def _should_send_keyword_reminder(user: User) -> tuple[bool, str | None]:
+    """Return (should_send, stage_text). Stages: 1h, 6h, 24h."""
+    settings = _get_reminder_settings(user)
+    reg_date = getattr(user, "registration_date", None)
+    if reg_date is None:
+        return False, None
+
+    now = datetime.datetime.utcnow()
+    hours_since = (now - reg_date).total_seconds() / 3600
+
+    if hours_since < 1:
+        return False, None
+
+    stage = settings.get("keyword_reminder_stage")
+    last_sent_str = settings.get("last_keyword_reminder_sent")
+
+    if stage is None:
+        stage = 1
+    elif stage == 1 and hours_since >= 6:
+        stage = 2
+    elif stage == 2 and hours_since >= 24:
+        stage = 3
+    elif stage == 3:
+        return False, None
+
+    if last_sent_str:
+        try:
+            last_sent = datetime.datetime.fromisoformat(last_sent_str)
+            if (now - last_sent).total_seconds() < 3600:
+                return False, None
+        except Exception:
+            pass
+
+    return True, str(stage)
+
+
+async def _should_send_source_reminder(user: User) -> bool:
+    settings = _get_reminder_settings(user)
+    now = datetime.datetime.utcnow()
+    last_sent_str = settings.get("last_source_reminder_sent")
+    if last_sent_str:
+        try:
+            last_sent = datetime.datetime.fromisoformat(last_sent_str)
+            if (now - last_sent).total_seconds() < 86400:
+                return False
+        except Exception:
+            pass
+    return True
+
+
+async def _send_keyword_reminder(user: User, bot: Bot, stage: str):
+    texts = {
+        "1": "Похоже, поиск ещё не настроен. Добавь ключевые слова — например: «Python разработчик», «Telegram бот», «автоматизация». После этого бот начнёт искать подходящие заявки.",
+        "2": "Напоминаю про настройку поиска. Добавь ключевые слова, по которым нужно искать клиентов, и бот сможет начать работу.",
+        "3": "Поиск пока не настроен. Если хочешь получать подходящие заявки автоматически, добавь ключевые слова и источники.",
+    }
+    text = texts.get(stage, texts["1"])
+    try:
+        await bot.send_message(user.telegram_id, text)
+        settings = _get_reminder_settings(user)
+        settings["last_keyword_reminder_sent"] = datetime.datetime.utcnow().isoformat()
+        settings["keyword_reminder_stage"] = int(stage) + 1 if int(stage) < 3 else 3
+        _set_reminder_settings(user, settings)
+        logger.info("REMINDER_SENT user=%s type=keyword stage=%s", user.id, stage)
+    except Exception as e:
+        logger.error("REMINDER_ERROR user=%s type=keyword error=%s", user.id, e)
+
+
+async def _send_source_reminder(user: User, bot: Bot):
+    text = "Ключевые слова уже добавлены. Осталось указать источники, где искать клиентов — после этого поиск сможет работать полностью."
+    try:
+        await bot.send_message(user.telegram_id, text)
+        settings = _get_reminder_settings(user)
+        settings["last_source_reminder_sent"] = datetime.datetime.utcnow().isoformat()
+        _set_reminder_settings(user, settings)
+        logger.info("REMINDER_SENT user=%s type=source", user.id)
+    except Exception as e:
+        logger.error("REMINDER_ERROR user=%s type=source error=%s", user.id, e)
+
+
+async def _process_user_reminders(user: User, bot: Bot):
+    """Process setup reminders for a single user based on current state."""
+    async with AsyncSessionLocal() as session:
+        keywords = (await session.execute(
+            select(Keyword).where(Keyword.user_id == user.id)
+        )).scalars().all()
+        sources = (await session.execute(
+            select(Source).where(Source.user_id == user.id, Source.status == "active")
+        )).scalars().all()
+
+    has_keywords = len(keywords) > 0
+    has_sources = len(sources) > 0
+
+    if has_keywords and has_sources:
+        return
+
+    if has_keywords and not has_sources:
+        if await _should_send_source_reminder(user):
+            await _send_source_reminder(user, bot)
+        return
+
+    if not has_keywords:
+        should_send, stage = await _should_send_keyword_reminder(user)
+        if should_send and stage:
+            await _send_keyword_reminder(user, bot, stage)
+
+
+async def _periodic_reminders(bot: Bot):
+    """Check and send setup reminders once per hour."""
+    while True:
+        try:
+            async with AsyncSessionLocal() as session:
+                users = (await session.execute(
+                    select(User).where(User.subscription_status.in_(["free", "active"]))
+                )).scalars().all()
+                active_users = []
+                for user in users:
+                    from app.services.users import check_subscription
+                    if await check_subscription(session, user):
+                        active_users.append(user)
+                users = active_users
+
+            for user in users:
+                try:
+                    await _process_user_reminders(user, bot)
+                except Exception:
+                    logger.exception("Reminder processing failed for user %s", user.id)
+                await asyncio.sleep(0.1)
+        except Exception:
+            logger.exception("Periodic reminders error")
+        await asyncio.sleep(3600)
+
+
 _source_last_checked: dict[int, int] = {}
 
 
@@ -456,11 +602,6 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
 
     if not sources or not keywords:
         logger.info("HIST_SEARCH_SKIP user=%s reason=%s", user.id, "no_sources" if not sources else "no_keywords")
-        try:
-            await bot.send_message(user.telegram_id, "ℹ️ Нет активных источников или ключевых слов для поиска.")
-            logger.info("HIST_SEARCH_MSG_SENT user=%s msg=no_sources_keywords", user.id)
-        except Exception as e:
-            logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e)
         return
 
     min_date = datetime.datetime.utcnow() - datetime.timedelta(days=HISTORY_DAYS)
@@ -761,6 +902,9 @@ async def main(bot=None):
 
     asyncio.create_task(periodic_historical())
     logger.info("Periodic historical search started (every 1h)")
+
+    asyncio.create_task(_periodic_reminders(bot))
+    logger.info("Periodic setup reminders started (every 1h)")
 
     asyncio.create_task(_periodic_polling(clients, client_users, bot))
     logger.info("Periodic new-message polling started (every 1m)")
