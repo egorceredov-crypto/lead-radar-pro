@@ -245,7 +245,7 @@ async def _poll_new_messages_for_user(user: User, client, bot: Bot):
 
     for source in sources:
         try:
-            entity = await client.get_entity(source.chat_id or source.username)
+            entity = await client.get_entity(_normalize_chat_id(source.chat_id) or source.username)
         except Exception as e:
             logger.warning("Polling: cannot resolve source %s for user %s: %s", source.id, user.id, e)
             continue
@@ -836,7 +836,7 @@ async def main(bot=None):
                 missing = []
                 for src in sources:
                     try:
-                        entity = await cl.get_entity(src.chat_id or src.username)
+                        entity = await cl.get_entity(_normalize_chat_id(src.chat_id) or src.username)
                         if not getattr(entity, "id", None):
                             missing.append(f"{src.id}:{src.title or src.username}")
                     except Exception:
@@ -870,38 +870,6 @@ async def main(bot=None):
         else:
             asyncio.create_task(_monitor_new_messages(clients[0], user.id, bot))
             logger.info("New-message monitoring started for user=%s telegram_id=%s fallback_session_idx=0", user.id, user.telegram_id)
-
-    # Периодический исторический поиск для всех пользователей
-    async def periodic_historical():
-        while True:
-            try:
-                async with AsyncSessionLocal() as session:
-                    users = (await session.execute(
-                        select(User).where(User.subscription_status.in_(["free", "active"]))
-                    )).scalars().all()
-                    active_users = []
-                    for user in users:
-                        from app.services.users import check_subscription
-                        if await check_subscription(session, user):
-                            active_users.append(user)
-                    users = active_users
-                for user in users:
-                    client_idx = None
-                    for i, u in enumerate(client_users):
-                        if u is not None and u.id == user.id:
-                            client_idx = i
-                            break
-                    if client_idx is not None:
-                        await _historical_search_for_user(user, clients[client_idx], bot)
-                    else:
-                        await _historical_search_for_user(user, clients[0], bot)
-                    await asyncio.sleep(0.1)
-            except Exception:
-                logger.exception("Periodic historical search error")
-            await asyncio.sleep(3600)  # раз в час
-
-    asyncio.create_task(periodic_historical())
-    logger.info("Periodic historical search started (every 1h)")
 
     asyncio.create_task(_periodic_reminders(bot))
     logger.info("Periodic setup reminders started (every 1h)")
