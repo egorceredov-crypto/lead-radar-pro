@@ -52,8 +52,13 @@ def _get_reminder_settings(user: User) -> dict:
     return settings
 
 
-def _set_reminder_settings(user: User, settings: dict):
-    user.settings = settings
+async def _persist_reminder_settings(user: User, settings: dict):
+    """Persist reminder settings to database."""
+    async with AsyncSessionLocal() as session:
+        db_user = await session.get(User, user.id)
+        if db_user:
+            db_user.settings = settings
+            await session.commit()
 
 
 async def _should_send_keyword_reminder(user: User) -> tuple[bool, str | None]:
@@ -64,32 +69,36 @@ async def _should_send_keyword_reminder(user: User) -> tuple[bool, str | None]:
         return False, None
 
     now = datetime.datetime.utcnow()
-    hours_since = (now - reg_date).total_seconds() / 3600
-
-    if hours_since < 1:
-        return False, None
-
-    stage = settings.get("keyword_reminder_stage")
+    stage = settings.get("keyword_reminder_stage", 0)
     last_sent_str = settings.get("last_keyword_reminder_sent")
 
-    if stage is None:
+    # Backward compatibility: old code stored stage as 1 higher than actual
+    if stage == 2:
         stage = 1
-    elif stage == 1 and hours_since >= 6:
-        stage = 2
-    elif stage == 2 and hours_since >= 24:
-        stage = 3
     elif stage == 3:
+        stage = 2
+
+    if stage == 0:
+        hours_since_reg = (now - reg_date).total_seconds() / 3600
+        if hours_since_reg >= 1:
+            return True, "1"
         return False, None
 
-    if last_sent_str:
-        try:
+    if stage == 1:
+        if last_sent_str:
             last_sent = datetime.datetime.fromisoformat(last_sent_str)
-            if (now - last_sent).total_seconds() < 3600:
-                return False, None
-        except Exception:
-            pass
+            if (now - last_sent).total_seconds() >= 6 * 3600:
+                return True, "2"
+        return False, None
 
-    return True, str(stage)
+    if stage == 2:
+        if last_sent_str:
+            last_sent = datetime.datetime.fromisoformat(last_sent_str)
+            if (now - last_sent).total_seconds() >= 24 * 3600:
+                return True, "3"
+        return False, None
+
+    return False, None
 
 
 async def _should_send_source_reminder(user: User) -> bool:
@@ -117,8 +126,9 @@ async def _send_keyword_reminder(user: User, bot: Bot, stage: str):
         await bot.send_message(user.telegram_id, text)
         settings = _get_reminder_settings(user)
         settings["last_keyword_reminder_sent"] = datetime.datetime.utcnow().isoformat()
-        settings["keyword_reminder_stage"] = int(stage) + 1 if int(stage) < 3 else 3
-        _set_reminder_settings(user, settings)
+        next_stage = int(stage) + 1 if int(stage) < 3 else 3
+        settings["keyword_reminder_stage"] = next_stage
+        await _persist_reminder_settings(user, settings)
         logger.info("REMINDER_SENT user=%s type=keyword stage=%s", user.id, stage)
     except Exception as e:
         logger.error("REMINDER_ERROR user=%s type=keyword error=%s", user.id, e)
@@ -130,7 +140,7 @@ async def _send_source_reminder(user: User, bot: Bot):
         await bot.send_message(user.telegram_id, text)
         settings = _get_reminder_settings(user)
         settings["last_source_reminder_sent"] = datetime.datetime.utcnow().isoformat()
-        _set_reminder_settings(user, settings)
+        await _persist_reminder_settings(user, settings)
         logger.info("REMINDER_SENT user=%s type=source", user.id)
     except Exception as e:
         logger.error("REMINDER_ERROR user=%s type=source error=%s", user.id, e)
