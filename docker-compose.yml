@@ -5,6 +5,7 @@ services:
     command: python -m app.manage bot
     volumes:
       - ./:/app
+      - db_data:/app/data
     env_file:
       - .env
     environment:
@@ -20,3 +21,6 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+
+volumes:
+  db_data:
