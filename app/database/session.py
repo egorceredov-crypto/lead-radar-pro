@@ -19,5 +19,6 @@ AsyncSessionLocal = async_sessionmaker(bind=engine, expire_on_commit=False)
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(text("PRAGMA journal_mode=WAL"))
+        if str(settings.database_url).startswith("sqlite"):
+            await conn.execute(text("PRAGMA journal_mode=WAL"))
 
