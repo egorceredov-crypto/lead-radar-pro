@@ -848,6 +848,14 @@ async def main(bot=None):
     except Exception:
         logger.exception("Startup source membership check failed")
 
+    from app.database.backup import restore_postgres_if_empty, start_periodic_backup
+    restored = await restore_postgres_if_empty()
+    if restored:
+        logger.info("Database restored from backup")
+
+    asyncio.create_task(start_periodic_backup(interval_seconds=3600))
+    logger.info("Periodic PostgreSQL backup started (every 1h)")
+
     # Build cache of effective source IDs for all users
     async with AsyncSessionLocal() as session:
         users = (await session.execute(
