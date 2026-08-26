@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     bot_token: str
     api_id: str | None = None
     api_hash: str | None = None
-    database_url: str = "postgresql+asyncpg://postgres:1234@localhost:5432/monitor_db"
+    database_url: str = "postgresql+asyncpg://postgres:1234@db:5432/monitor_db"
     redis_url: str = "redis://localhost:6379/0"
     admin_id: int | None = None
     admin_ids: str | None = None
