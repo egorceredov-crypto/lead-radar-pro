@@ -727,7 +727,6 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
     monitor_logger.setLevel(logging.INFO)
     first_user = await _get_user_effective_source_ids_by_id(user_id)
     monitor_logger.info("Monitor started for user_id=%s sources=%d", user_id, len(first_user))
-    effective_sources = first_user
 
     async def handler(event):
         try:
@@ -763,6 +762,8 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                 if fresh_user is None:
                     monitor_logger.warning("Monitor: user %s not found, skipping", user_id)
                     return
+
+                effective_sources = await _get_user_effective_source_ids_by_id(user_id)
                 if source.id not in effective_sources:
                     return
 

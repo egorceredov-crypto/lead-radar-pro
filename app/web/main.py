@@ -146,6 +146,12 @@ async def chats_add(request: Request):
         import logging
         logging.getLogger(__name__).warning("Failed to schedule source parse %s: %s", source_id, e)
 
+    try:
+        from app.parser.worker import invalidate_all_user_caches
+        invalidate_all_user_caches()
+    except Exception:
+        pass
+
     return {"ok": True}
 
 
@@ -390,6 +396,12 @@ async def chats_add(request: Request):
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning("Failed to schedule source parse %s: %s", source_id, e)
+
+    try:
+        from app.parser.worker import invalidate_all_user_caches
+        invalidate_all_user_caches()
+    except Exception:
+        pass
 
     return {"ok": True}
 
