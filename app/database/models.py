@@ -176,6 +176,7 @@ class Source(Base):
     title = Column(String, nullable=True)
     category = Column(String, nullable=True)
     status = Column(String, default="active")
+    last_checked_message_id = Column(BigInteger, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 

@@ -1355,6 +1355,22 @@ async def handle_text(message: Message):
                         
                         from app.parser.worker import invalidate_all_user_caches
                         invalidate_all_user_caches()
+                        
+                        for sid in new_source_ids:
+                            try:
+                                src = await session.get(Source, sid)
+                                if src is None:
+                                    continue
+                                entity = await client.get_entity(src.chat_id)
+                                messages = await client.get_messages(entity, limit=1)
+                                if messages:
+                                    last_msg_id = messages[0].id
+                                    src.last_checked_message_id = last_msg_id
+                                    await session.commit()
+                                    from app.parser.worker import _source_last_checked, _update_last_checked_message_id
+                                    _update_last_checked_message_id(sid, last_msg_id)
+                            except Exception as e:
+                                logger.warning("Failed to init last_checked_message_id for source %s: %s", sid, e)
                     break
                 except Exception as e:
                     if attempt < max_retries - 1:

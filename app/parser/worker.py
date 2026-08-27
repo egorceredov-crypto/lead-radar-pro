@@ -207,6 +207,11 @@ async def _get_last_checked_message_id(source_id: int) -> int:
     if source_id in _source_last_checked:
         return _source_last_checked[source_id]
     async with AsyncSessionLocal() as session:
+        source = await session.get(Source, source_id)
+        db_last = getattr(source, "last_checked_message_id", None)
+        if db_last:
+            _source_last_checked[source_id] = int(db_last)
+            return int(db_last)
         result = await session.execute(
             select(func.max(ChatMessage.telegram_message_id)).where(
                 ChatMessage.chat_id == source_id
@@ -222,6 +227,23 @@ def _update_last_checked_message_id(source_id: int, message_id: int):
     current = _source_last_checked.get(source_id, 0)
     if message_id > current:
         _source_last_checked[source_id] = message_id
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(_persist_last_checked(source_id, message_id))
+            else:
+                loop.run_until_complete(_persist_last_checked(source_id, message_id))
+        except Exception as e:
+            logger.debug("Failed to persist last_checked_message_id for source %s: %s", source_id, e)
+
+
+async def _persist_last_checked(source_id: int, message_id: int):
+    async with AsyncSessionLocal() as session:
+        source = await session.get(Source, source_id)
+        if source is not None:
+            source.last_checked_message_id = message_id
+            await session.commit()
 
 
 async def _poll_new_messages_for_user(user: User, client, bot: Bot):
