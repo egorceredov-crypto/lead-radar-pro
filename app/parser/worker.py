@@ -12,6 +12,7 @@ from app.database.session import AsyncSessionLocal, init_db
 from app.database.models import (
     Source, Keyword, StopWord, Lead, ChatMessage, Notification, User
 )
+from app.services.users import auto_category
 from config import settings
 from aiogram import Bot
 
@@ -135,7 +136,7 @@ async def _send_keyword_reminder(user: User, bot: Bot, stage: str):
 
 
 async def _send_source_reminder(user: User, bot: Bot):
-    text = "Ключевые слова уже добавлены. Осталось указать источники, где искать клиентов — после этого поиск сможет работать полностью."
+    text = "Поиск активирован. Бот автоматически проверяет доступные Telegram-чаты по вашим ключевым словам."
     try:
         await bot.send_message(user.telegram_id, text)
         settings = _get_reminder_settings(user)
@@ -152,12 +153,10 @@ async def _process_user_reminders(user: User, bot: Bot):
         keywords = (await session.execute(
             select(Keyword).where(Keyword.user_id == user.id)
         )).scalars().all()
-        sources = (await session.execute(
-            select(Source).where(Source.user_id == user.id, Source.status == "active")
-        )).scalars().all()
+        effective_source_ids = await _get_user_effective_source_ids(user)
 
     has_keywords = len(keywords) > 0
-    has_sources = len(sources) > 0
+    has_sources = len(effective_source_ids) > 0
 
     if has_keywords and has_sources:
         return
@@ -401,6 +400,17 @@ def _normalize_chat_id(chat_id: int) -> int:
     return chat_id
 
 
+def _detect_chat_type(entity) -> str:
+    from telethon.tl.types import Channel, Chat, User as TLUser
+    if isinstance(entity, TLUser):
+        return "private"
+    if isinstance(entity, Channel):
+        return "channel" if getattr(entity, "broadcast", False) else "group"
+    if isinstance(entity, Chat):
+        return "group"
+    return "chat"
+
+
 def _build_link(chat, msg_id: int) -> str | None:
     """Строит ссылку на сообщение."""
     username = getattr(chat, "username", None)
@@ -440,7 +450,7 @@ def _normalize_category(name: str) -> str:
 
 async def _get_user_effective_source_ids(user: User) -> set[int]:
     """Возвращает set ID источников, которые пользователь должен получать.
-    Учитывает выбранные категории. Если категории не совпадают ни с одним источником — возвращает пустой set."""
+    Учитывает выбранные категории. Если категории не совпадают ни с одним источником — возвращает все активные источники."""
     if user.id in _user_effective_source_ids:
         return _user_effective_source_ids[user.id]
     async with AsyncSessionLocal() as session:
@@ -450,6 +460,8 @@ async def _get_user_effective_source_ids(user: User) -> set[int]:
             normalized_user_cats = [_normalize_category(c) for c in user_cats]
             all_sources = (await session.execute(sources_query)).scalars().all()
             sources = [s for s in all_sources if s.category and _normalize_category(s.category) in normalized_user_cats]
+            if not sources:
+                sources = all_sources
         else:
             sources = (await session.execute(sources_query)).scalars().all()
         source_ids = {s.id for s in sources}
@@ -762,6 +774,7 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                 return
 
             chat_username = getattr(chat, "username", None)
+            chat_title = getattr(chat, "title", None) or getattr(chat, "first_name", None)
             normalized_chat_id = chat_id
             if isinstance(normalized_chat_id, int) and normalized_chat_id < 0 and str(abs(normalized_chat_id)).startswith("100"):
                 normalized_chat_id = int(str(abs(normalized_chat_id))[3:])
@@ -778,7 +791,27 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                     query = query.where(Source.chat_id == normalized_chat_id)
                 source = (await session.execute(query)).scalar_one_or_none()
                 if not source:
-                    return
+                    chat_type = _detect_chat_type(chat)
+                    category = auto_category(chat_title, chat_username)
+                    source = Source(
+                        type=chat_type,
+                        username=chat_username,
+                        chat_id=int(normalized_chat_id),
+                        title=chat_title,
+                        category=category,
+                        status="active",
+                    )
+                    session.add(source)
+                    await session.flush()
+                    invalidate_all_user_caches()
+                    try:
+                        msgs = await client.get_messages(chat, limit=1)
+                        if msgs:
+                            source.last_checked_message_id = msgs[0].id
+                    except Exception:
+                        pass
+                    await session.commit()
+                    monitor_logger.info("Monitor auto-created source id=%s title=%s category=%s", source.id, source.title, category)
 
                 fresh_user = await session.get(User, user_id)
                 if fresh_user is None:
@@ -858,6 +891,58 @@ async def main(bot=None):
     if not clients:
         logger.warning("No Telethon clients connected. Parsing disabled.")
         return
+
+    # Проверка участия в активных источниках для всех клиентов
+    # Автодобавление доступных Telegram-чатов в систему источников
+    try:
+        async with AsyncSessionLocal() as session:
+            existing_sources = (await session.execute(
+                select(Source).where(Source.status == "active")
+            )).scalars().all()
+            existing_ids = {int(s.chat_id) for s in existing_sources if s.chat_id is not None}
+            existing_usernames = {str(s.username).lower() for s in existing_sources if s.username}
+
+            for idx, cl in enumerate(clients):
+                try:
+                    added_for_client = 0
+                    async for dialog in cl.iter_dialogs():
+                        chat = dialog.entity
+                        chat_id = getattr(chat, "id", None)
+                        if chat_id is None:
+                            continue
+                        normalized_chat_id = _normalize_chat_id(int(chat_id))
+                        username = getattr(chat, "username", None)
+                        title = getattr(chat, "title", None) or getattr(chat, "first_name", None)
+                        normalized_username = username.lower() if username else None
+
+                        if normalized_chat_id in existing_ids or (normalized_username and normalized_username in existing_usernames):
+                            continue
+
+                        chat_type = _detect_chat_type(chat)
+                        category = auto_category(title, username)
+                        src = Source(
+                            type=chat_type,
+                            username=username,
+                            chat_id=normalized_chat_id,
+                            title=title,
+                            category=category,
+                            status="active",
+                        )
+                        session.add(src)
+                        await session.flush()
+                        existing_ids.add(normalized_chat_id)
+                        if normalized_username:
+                            existing_usernames.add(normalized_username)
+                        added_for_client += 1
+                        logger.info("Auto-added source id=%s title=%s category=%s", src.id, src.title, category)
+                    if added_for_client:
+                        await session.commit()
+                        invalidate_all_user_caches()
+                        logger.info("Auto-added %d sources for client %d", added_for_client, idx)
+                except Exception:
+                    logger.exception("Auto-source discovery failed for client %d", idx)
+    except Exception:
+        logger.exception("Startup auto-source discovery failed")
 
     # Проверка участия в активных источниках для всех клиентов
     try:
