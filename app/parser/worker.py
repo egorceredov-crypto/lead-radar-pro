@@ -612,6 +612,7 @@ async def _historical_search_for_source(user: User, source: Source, client, bot:
                         continue
                     if await _save_lead(user, source, entity, msg, text, kw.word, bot):
                         local_saved += 1
+                        _update_last_checked_message_id(source.id, msg.id)
                     local_found += 1
             except Exception as e:
                 logger.warning("Historical-source search error in %s for %s: %s", source.id, kw.word, e)
@@ -728,6 +729,7 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
                     saved_successfully = await _save_lead(user, src, entity, msg, text, kw.word, bot, is_historical_search=True)
                     if saved_successfully:
                         local_saved += 1
+                        _update_last_checked_message_id(src.id, msg.id)
                     local_found += 1
                     logger.info("HIST_SEARCH_LEAD user=%s source=%s kw=%s msg_id=%s saved=%s", user.id, src.id, kw.word, msg.id, saved_successfully)
                 return local_found, local_saved
@@ -808,8 +810,10 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                         msgs = await client.get_messages(chat, limit=1)
                         if msgs:
                             source.last_checked_message_id = msgs[0].id
+                        else:
+                            source.last_checked_message_id = event.message.id
                     except Exception:
-                        pass
+                        source.last_checked_message_id = event.message.id
                     await session.commit()
                     monitor_logger.info("Monitor auto-created source id=%s title=%s category=%s", source.id, source.title, category)
 
@@ -825,12 +829,15 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                 async with AsyncSessionLocal() as s2:
                     matched = await _match_keywords(text, fresh_user, s2)
                     if not matched:
+                        _update_last_checked_message_id(source.id, event.message.id)
                         return
                     if await _has_stopword(text, fresh_user, s2):
+                        _update_last_checked_message_id(source.id, event.message.id)
                         return
             monitor_logger.info("NEW_LEAD user=%s keyword=%s source=%s message_id=%s", user_id, matched, source.id, event.message.id)
             monitor_logger.info("Monitor matched keyword '%s' for user %s in source %s", matched, user_id, source.id)
             saved = await _save_lead(fresh_user, source, chat, event.message, text, matched, bot)
+            _update_last_checked_message_id(source.id, event.message.id)
             print(f"REALTIME_DEBUG after_save_lead user={user_id} saved={saved}", flush=True)
             monitor_logger.info("DEBUG: after _save_lead saved=%s", saved)
             if saved:
