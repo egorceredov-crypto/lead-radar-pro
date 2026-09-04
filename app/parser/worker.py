@@ -284,8 +284,9 @@ async def _poll_new_messages_for_user(user: User, client, bot: Bot):
         try:
             last_checked_id = await _get_last_checked_message_id(source.id)
             messages = await client.get_messages(entity, limit=100)
-            new_in_source = [m for m in messages if getattr(m, "id", 0) > last_checked_id]
-            logger.info("POLLING_SOURCE user=%s source=%s last_checked_id=%s fetched=%s new=%s", user.id, source.id, last_checked_id, len(messages), len(new_in_source))
+            new_in_source = [m for m in messages if getattr(m, "id", 0) > last_checked_id and not _is_outgoing_message(m)]
+            logger.info("POLLING_SOURCE user=%s source=%s chat_id=%s title=%s last_checked_id=%s fetched=%s new=%s", user.id, source.id, source.chat_id, source.title, last_checked_id, len(messages), len(new_in_source))
+            logger.info("PARSER_SOURCE chat_id=%s title=%s type=%s source_id=%s", source.chat_id, source.title, source.type, source.id)
             total_new_messages += len(new_in_source)
         except Exception as e:
             logger.warning("Polling: cannot get messages for source %s user %s: %s", source.id, user.id, e)
@@ -323,7 +324,7 @@ async def _poll_new_messages_for_user(user: User, client, bot: Bot):
                 total_matched += 1
             _update_last_checked_message_id(source.id, msg.id)
 
-    logger.info("POLLING_CYCLE user=%s new_messages=%s matched=%s saved=%s", user.id, total_new_messages, total_matched, new_leads_count)
+    logger.info("POLLING_CYCLE user=%s sources=%d new_messages=%s matched=%s saved=%s", user.id, len(sources), total_new_messages, total_matched, new_leads_count)
 
     if new_leads_count > 0:
         try:
@@ -398,6 +399,14 @@ def _normalize_chat_id(chat_id: int) -> int:
     if isinstance(chat_id, int) and chat_id < 0 and str(abs(chat_id)).startswith("100"):
         return int(str(abs(chat_id))[3:])
     return chat_id
+
+
+def _is_bot_entity(entity) -> bool:
+    return bool(getattr(entity, "bot", False))
+
+
+def _is_outgoing_message(msg) -> bool:
+    return bool(getattr(msg, "outgoing", False))
 
 
 def _detect_chat_type(entity) -> str:
@@ -580,6 +589,10 @@ async def _historical_search_for_source(user: User, source: Source, client, bot:
         logger.warning("Historical-source: cannot resolve source %s: %s", source.id, e)
         return
 
+    if _is_bot_entity(entity):
+        logger.info("HISTORICAL_SKIP_BOT source=%s title=%s", source.id, source.title)
+        return
+
     search_semaphore = asyncio.Semaphore(3)
 
     async def _search_one(kw):
@@ -603,6 +616,8 @@ async def _historical_search_for_source(user: User, source: Source, client, bot:
                 for msg in result.messages:
                     text = getattr(msg, "message", "") or ""
                     if not text:
+                        continue
+                    if _is_outgoing_message(msg):
                         continue
                     async with AsyncSessionLocal() as s2:
                         if await _has_stopword(text, user, s2):
@@ -678,11 +693,21 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
     resolve_tasks = [_resolve(src) for src in search_sources]
     entities = await asyncio.gather(*resolve_tasks, return_exceptions=True)
 
-    failed_sources = []
+    resolved = []
     for src, entity in zip(search_sources, entities):
         if entity is None or isinstance(entity, Exception):
-            failed_sources.append(src.title or src.username or str(src.id))
+            continue
+        if _is_bot_entity(entity):
+            logger.info("HISTORICAL_SKIP_BOT user=%s source=%s title=%s", user.id, src.id, src.title)
+            continue
+        logger.info("HISTORICAL_SOURCE user=%s source=%s chat_id=%s title=%s type=%s", user.id, src.id, src.chat_id, src.title, src.type)
+        resolved.append((src, entity))
 
+    failed_sources = [
+        src.title or src.username or str(src.id)
+        for src, entity in zip(search_sources, entities)
+        if entity is None or isinstance(entity, Exception)
+    ]
     if failed_sources:
         try:
             await bot.send_message(user.telegram_id, f"⚠️ Не удалось получить чаты: {', '.join(failed_sources)}")
@@ -718,6 +743,8 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
                     text = getattr(msg, "message", "") or ""
                     if not text:
                         continue
+                    if _is_outgoing_message(msg):
+                        continue
                     async with AsyncSessionLocal() as s2:
                         if await _has_stopword(text, user, s2):
                             logger.info("HIST_SEARCH_STOPWORD user=%s source=%s msg_id=%s", user.id, src.id, msg.id)
@@ -738,9 +765,7 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
                 return 0, 0
 
     search_tasks = []
-    for src, entity in zip(search_sources, entities):
-        if entity is None or isinstance(entity, Exception):
-            continue
+    for src, entity in resolved:
         for kw in keywords:
             search_tasks.append(_search_one(src, entity, kw))
 
@@ -770,9 +795,16 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
             if not text:
                 return
 
+            if _is_outgoing_message(event.message):
+                return
+
             chat = await event.get_chat()
             chat_id = getattr(chat, "id", None)
             if chat_id is None:
+                return
+
+            if _is_bot_entity(chat):
+                monitor_logger.info("Monitor skip bot chat chat_id=%s", chat_id)
                 return
 
             chat_username = getattr(chat, "username", None)
@@ -817,6 +849,8 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                     await session.commit()
                     monitor_logger.info("Monitor auto-created source id=%s title=%s category=%s", source.id, source.title, category)
 
+                monitor_logger.info("PARSER_SOURCE chat_id=%s title=%s type=%s source_id=%s", normalized_chat_id, source.title, source.type, source.id)
+
                 fresh_user = await session.get(User, user_id)
                 if fresh_user is None:
                     monitor_logger.warning("Monitor: user %s not found, skipping", user_id)
@@ -824,6 +858,7 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
 
                 effective_sources = await _get_user_effective_source_ids_by_id(user_id)
                 if source.id not in effective_sources:
+                    monitor_logger.info("Monitor skip source=%s not in effective sources", source.id)
                     return
 
                 async with AsyncSessionLocal() as s2:
@@ -912,20 +947,44 @@ async def main(bot=None):
             for idx, cl in enumerate(clients):
                 try:
                     added_for_client = 0
+                    skipped_bot = 0
+                    skipped_dup = 0
+                    skipped_me = 0
+                    type_counts = {"total": 0, "groups": 0, "supergroups": 0, "channels": 0, "private": 0, "other": 0}
                     async for dialog in cl.iter_dialogs():
                         chat = dialog.entity
+                        type_counts["total"] += 1
                         chat_id = getattr(chat, "id", None)
                         if chat_id is None:
+                            continue
+                        if _is_bot_entity(chat):
+                            skipped_bot += 1
+                            continue
+                        if matched_user and getattr(chat, "id", None) == getattr(me, "id", None):
+                            skipped_me += 1
                             continue
                         normalized_chat_id = _normalize_chat_id(int(chat_id))
                         username = getattr(chat, "username", None)
                         title = getattr(chat, "title", None) or getattr(chat, "first_name", None)
                         normalized_username = username.lower() if username else None
+                        chat_type = _detect_chat_type(chat)
+                        if chat_type == "group":
+                            from telethon.tl.types import Channel
+                            if isinstance(chat, Channel):
+                                type_counts["supergroups"] += 1
+                            else:
+                                type_counts["groups"] += 1
+                        elif chat_type == "channel":
+                            type_counts["channels"] += 1
+                        elif chat_type == "private":
+                            type_counts["private"] += 1
+                        else:
+                            type_counts["other"] += 1
 
                         if normalized_chat_id in existing_ids or (normalized_username and normalized_username in existing_usernames):
+                            skipped_dup += 1
                             continue
 
-                        chat_type = _detect_chat_type(chat)
                         category = auto_category(title, username)
                         src = Source(
                             type=chat_type,
@@ -946,6 +1005,12 @@ async def main(bot=None):
                         await session.commit()
                         invalidate_all_user_caches()
                         logger.info("Auto-added %d sources for client %d", added_for_client, idx)
+                    logger.info(
+                        "DIALOG_STATS client=%d total=%d groups=%d supergroups=%d channels=%d private=%d other=%d skipped_bot=%d skipped_me=%d skipped_dup=%d",
+                        idx, type_counts["total"], type_counts["groups"], type_counts["supergroups"],
+                        type_counts["channels"], type_counts["private"], type_counts["other"],
+                        skipped_bot, skipped_me, skipped_dup
+                    )
                 except Exception:
                     logger.exception("Auto-source discovery failed for client %d", idx)
     except Exception:
