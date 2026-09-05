@@ -253,7 +253,7 @@ async def _search_sources_polling(user: User, client, bot, sources, keywords) ->
 
     for source in sources:
         try:
-            entity = await client.get_entity(_normalize_chat_id(source.chat_id) or source.username)
+            entity = await _resolve_source(client, source, user_id=user.id)
         except Exception as e:
             logger.warning("Polling: cannot resolve source %s for user %s: %s", source.id, user.id, e)
             continue
@@ -425,6 +425,66 @@ def _normalize_chat_id(chat_id: int) -> int:
     if isinstance(chat_id, int) and chat_id < 0 and str(abs(chat_id)).startswith("100"):
         return int(str(abs(chat_id))[3:])
     return chat_id
+
+
+async def _resolve_source(client, src, user_id: int | None = None, dialog_entities: list | None = None):
+    """Resolve a Source to a Telethon entity.
+    
+    For personal dialogs (positive chat_id): prefer matching against
+    cached dialog entities instead of get_entity, because Telethon
+    cannot always resolve arbitrary user IDs unless cached.
+    
+    For groups/channels (negative chat_id / username): try
+    get_entity first, then fall back to cached dialog entities.
+    
+    dialog_entities: optional pre-fetched list of dialog entities.
+    """
+    chat_id = getattr(src, "chat_id", None)
+    title = getattr(src, "title", None) or ""
+    username = getattr(src, "username", None) or ""
+    
+    is_likely_user = isinstance(chat_id, int) and chat_id > 0
+    
+    def _match_entity(entity):
+        dialog_title = getattr(entity, "title", None) or getattr(entity, "first_name", None) or ""
+        dialog_username = getattr(entity, "username", None) or ""
+        if title and dialog_title and title.lower() == dialog_title.lower():
+            return True
+        if username and dialog_username and username.lower() == dialog_username.lower():
+            return True
+        if is_likely_user and str(chat_id) == str(getattr(entity, "id", None)):
+            return True
+        return False
+    
+    # 1) For likely personal dialogs, scan cached dialogs first.
+    if is_likely_user and dialog_entities is not None:
+        for entity in dialog_entities:
+            if _match_entity(entity):
+                return entity
+    
+    # 2) Try username via get_entity.
+    if username:
+        try:
+            return await client.get_entity(username)
+        except Exception as e:
+            logger.debug("RESOLVE_USERNAME_FAIL source=%s username=%s err=%s", src.id, username, e)
+    
+    # 3) Try chat_id via get_entity.
+    if chat_id is not None:
+        try:
+            return await client.get_entity(_normalize_chat_id(chat_id))
+        except Exception as e:
+            logger.debug("RESOLVE_CHAT_ID_FAIL source=%s chat_id=%s err=%s", src.id, chat_id, e)
+    
+    # 4) Final fallback: scan cached dialogs by title/username/id.
+    if dialog_entities is not None:
+        for entity in dialog_entities:
+            if _match_entity(entity):
+                return entity
+    
+    logger.warning("RESOLVE_SOURCE_FAIL user=%s source=%s title=%s username=%s chat_id=%s", 
+                   user_id, src.id, title, username, chat_id)
+    return None
 
 
 def _is_bot_entity(entity) -> bool:
@@ -610,7 +670,7 @@ async def _historical_search_for_source(user: User, source: Source, client, bot:
     saved = 0
 
     try:
-        entity = await client.get_entity(_normalize_chat_id(source.chat_id) or source.username)
+        entity = await _resolve_source(client, source, user_id=user.id)
     except Exception as e:
         logger.warning("Historical-source: cannot resolve source %s: %s", source.id, e)
         return
@@ -709,14 +769,24 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
         search_sources = sources[:QUICK_SEARCH_SOURCES_LIMIT]
         logger.info("HIST_SEARCH_QUICK user=%s keyword=%s limited_sources=%s", user.id, keyword, len(search_sources))
 
-    async def _resolve(src):
-        try:
-            return await client.get_entity(_normalize_chat_id(src.chat_id) or src.username)
-        except Exception as e:
-            logger.warning("HIST_SEARCH_RESOLVE_FAIL user=%s source=%s err=%s", user.id, src.id, e)
-            return None
+    async def _resolve(src, dialog_entities):
+        async with _resolve_semaphore:
+            try:
+                return await _resolve_source(client, src, user_id=user.id, dialog_entities=dialog_entities)
+            except Exception as e:
+                logger.warning("HIST_SEARCH_RESOLVE_FAIL user=%s source=%s err=%s", user.id, src.id, e)
+                return None
 
-    resolve_tasks = [_resolve(src) for src in search_sources]
+    _resolve_semaphore = asyncio.Semaphore(3)
+    logger.info("HIST_SEARCH_DIALOGS_START user=%s", user.id)
+    dialog_entities = []
+    try:
+        async for dialog in client.iter_dialogs():
+            dialog_entities.append(dialog.entity)
+    except Exception as e:
+        logger.warning("HIST_SEARCH_DIALOGS_FAIL user=%s err=%s", user.id, e)
+    logger.info("HIST_SEARCH_DIALOGS user=%s count=%s", user.id, len(dialog_entities))
+    resolve_tasks = [_resolve(src, dialog_entities) for src in search_sources]
     entities = await asyncio.gather(*resolve_tasks, return_exceptions=True)
 
     resolved = []
@@ -1088,7 +1158,7 @@ async def main(bot=None):
                 missing = []
                 for src in sources:
                     try:
-                        entity = await cl.get_entity(_normalize_chat_id(src.chat_id) or src.username)
+                        entity = await _resolve_source(cl, src)
                         if not getattr(entity, "id", None):
                             missing.append(f"{src.id}:{src.title or src.username}")
                     except Exception:

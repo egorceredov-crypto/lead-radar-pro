@@ -1153,7 +1153,7 @@ async def handle_text(message: Message):
             WAITING.pop(message.from_user.id, None)
             await message.answer(WORD_ADDED.format(word=word))
             from app.services.parser_runner import run_historical_for_user
-            await run_historical_for_user(user.id, keyword=word)
+            await run_historical_for_user(user.id)
             await _show_keywords_menu_msg(message)
             return
 
