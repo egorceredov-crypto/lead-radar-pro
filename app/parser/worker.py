@@ -245,31 +245,8 @@ async def _persist_last_checked(source_id: int, message_id: int):
             await session.commit()
 
 
-async def _poll_new_messages_for_user(user: User, client, bot: Bot):
-    """Проверяет новые сообщения в источниках пользователя."""
-    source_ids = await _get_user_effective_source_ids(user)
-    if not source_ids:
-        logger.info("POLLING_SKIP user=%s reason=no_sources", user.id)
-        return
-
-    async with AsyncSessionLocal() as session:
-        sources = (await session.execute(
-            select(Source).where(Source.id.in_(source_ids))
-        )).scalars().all()
-
-    if not sources:
-        logger.info("POLLING_SKIP user=%s reason=no_sources_resolved", user.id)
-        return
-
-    async with AsyncSessionLocal() as session:
-        keywords = (await session.execute(
-            select(Keyword).where(Keyword.user_id == user.id)
-        )).scalars().all()
-
-    if not keywords:
-        logger.info("POLLING_SKIP user=%s reason=no_keywords", user.id)
-        return
-
+async def _search_sources_polling(user: User, client, bot, sources, keywords) -> tuple[int, int, int]:
+    """Search a list of sources for new messages. Returns (new_leads_count, total_new_messages, total_matched)."""
     total_new_messages = 0
     total_matched = 0
     new_leads_count = 0
@@ -324,7 +301,56 @@ async def _poll_new_messages_for_user(user: User, client, bot: Bot):
                 total_matched += 1
             _update_last_checked_message_id(source.id, msg.id)
 
-    logger.info("POLLING_CYCLE user=%s sources=%d new_messages=%s matched=%s saved=%s", user.id, len(sources), total_new_messages, total_matched, new_leads_count)
+    return new_leads_count, total_new_messages, total_matched
+
+
+async def _poll_new_messages_for_user(user: User, client, bot: Bot):
+    """Проверяет новые сообщения в источниках пользователя."""
+    source_ids = await _get_user_effective_source_ids(user)
+    if not source_ids:
+        logger.info("POLLING_SKIP user=%s reason=no_sources", user.id)
+        return
+
+    async with AsyncSessionLocal() as session:
+        sources = (await session.execute(
+            select(Source).where(Source.id.in_(source_ids))
+        )).scalars().all()
+
+    if not sources:
+        logger.info("POLLING_SKIP user=%s reason=no_sources_resolved", user.id)
+        return
+
+    async with AsyncSessionLocal() as session:
+        keywords = (await session.execute(
+            select(Keyword).where(Keyword.user_id == user.id)
+        )).scalars().all()
+
+    if not keywords:
+        logger.info("POLLING_SKIP user=%s reason=no_keywords", user.id)
+        return
+
+    new_leads_count, total_new_messages, total_matched = await _search_sources_polling(user, client, bot, sources, keywords)
+
+    user_cats = (user.settings or {}).get("categories", []) if user.settings else []
+    remaining_sources = []
+    if new_leads_count == 0 and user_cats:
+        async with AsyncSessionLocal() as session:
+            all_sources = (await session.execute(
+                select(Source).where(Source.status == "active")
+            )).scalars().all()
+        remaining_ids = {s.id for s in all_sources} - {s.id for s in sources}
+        if remaining_ids:
+            async with AsyncSessionLocal() as session:
+                remaining_sources = (await session.execute(
+                    select(Source).where(Source.id.in_(remaining_ids))
+                )).scalars().all()
+            logger.info("POLLING_FALLBACK user=%s remaining_sources=%d", user.id, len(remaining_sources))
+            fallback_leads, fallback_new, fallback_matched = await _search_sources_polling(user, client, bot, remaining_sources, keywords)
+            new_leads_count += fallback_leads
+            total_new_messages += fallback_new
+            total_matched += fallback_matched
+
+    logger.info("POLLING_CYCLE user=%s sources=%d new_messages=%s matched=%s saved=%s", user.id, len(sources) + len(remaining_sources), total_new_messages, total_matched, new_leads_count)
 
     if new_leads_count > 0:
         try:
@@ -774,12 +800,48 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
         found += f
         saved += s
 
+    user_cats = (user.settings or {}).get("categories", []) if user.settings else []
+    if saved == 0 and user_cats:
+        async with AsyncSessionLocal() as session:
+            all_sources = (await session.execute(
+                select(Source).where(Source.status == "active")
+            )).scalars().all()
+        remaining_ids = {s.id for s in all_sources} - {s.id for s in sources}
+        if remaining_ids:
+            async with AsyncSessionLocal() as session:
+                remaining_sources = (await session.execute(
+                    select(Source).where(Source.id.in_(remaining_ids))
+                )).scalars().all()
+            logger.info("HIST_SEARCH_FALLBACK user=%s remaining_sources=%d", user.id, len(remaining_sources))
+            unresolved = {src.id for src in remaining_sources if src not in {r[0] for r in resolved}}
+            additional = []
+            for src in remaining_sources:
+                if src.id in unresolved:
+                    entity = await _resolve(src)
+                    if entity is None or isinstance(entity, Exception):
+                        failed_sources.append(src.title or src.username or str(src.id))
+                        continue
+                    if _is_bot_entity(entity):
+                        logger.info("HISTORICAL_SKIP_BOT user=%s source=%s title=%s", user.id, src.id, src.title)
+                        continue
+                    logger.info("HISTORICAL_SOURCE user=%s source=%s chat_id=%s title=%s type=%s", user.id, src.id, src.chat_id, src.title, src.type)
+                    additional.append((src, entity))
+            search_tasks = []
+            for src, entity in additional:
+                for kw in keywords:
+                    search_tasks.append(_search_one(src, entity, kw))
+            results = await asyncio.gather(*search_tasks)
+            for f, s in results:
+                found += f
+                saved += s
+
     logger.info("HIST_SEARCH_END user=%s found=%s saved=%s", user.id, found, saved)
-    try:
-        await bot.send_message(user.telegram_id, f"✅ Поиск завершен.\nНайдено совпадений: {found}\nНовых лидов: {saved}\nПосмотреть: /results")
-        logger.info("HIST_SEARCH_MSG_SENT user=%s msg=search_complete", user.id)
-    except Exception as e:
-        logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e)
+    if found > 0 or saved > 0:
+        try:
+            await bot.send_message(user.telegram_id, f"✅ Поиск завершен.\nНайдено совпадений: {found}\nНовых лидов: {saved}\nПосмотреть: /results")
+            logger.info("HIST_SEARCH_MSG_SENT user=%s msg=search_complete", user.id)
+        except Exception as e:
+            logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e)
 
 
 async def _monitor_new_messages(client, user_id: int, bot: Bot):
