@@ -280,7 +280,7 @@ async def _search_sources_polling(user: User, client, bot, sources, keywords) ->
                     select(ChatMessage).where(
                         ChatMessage.telegram_message_id == msg.id,
                         ChatMessage.user_id == user.id,
-                    )
+                    ).limit(1)
                 )).scalar_one_or_none()
                 if dup:
                     _update_last_checked_message_id(source.id, msg.id)
@@ -594,7 +594,7 @@ async def _save_lead(user: User, source: Source, chat, msg, text: str, matched: 
             select(ChatMessage).where(
                 ChatMessage.telegram_message_id == msg.id,
                 ChatMessage.user_id == user.id,
-            )
+            ).limit(1)
         )).scalar_one_or_none()
         if dup:
             logger.debug("Duplicate message %s for user %s, skipping", msg.id, user.id)
