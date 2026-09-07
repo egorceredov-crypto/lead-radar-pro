@@ -4,6 +4,7 @@ import logging
 import time
 from sqlalchemy import func, select
 from telethon import events
+from telethon.errors import FloodWaitError
 from telethon.tl.functions.messages import SearchRequest
 from telethon.tl.types import InputMessagesFilterEmpty
 
@@ -208,7 +209,7 @@ async def _get_last_checked_message_id(source_id: int) -> int:
     async with AsyncSessionLocal() as session:
         source = await session.get(Source, source_id)
         db_last = getattr(source, "last_checked_message_id", None)
-        if db_last:
+        if db_last is not None:
             _source_last_checked[source_id] = int(db_last)
             return int(db_last)
         result = await session.execute(
@@ -251,11 +252,22 @@ async def _search_sources_polling(user: User, client, bot, sources, keywords) ->
     total_matched = 0
     new_leads_count = 0
 
+    dialog_entities = []
+    try:
+        async for dialog in client.iter_dialogs():
+            dialog_entities.append(dialog.entity)
+    except Exception as e:
+        logger.warning("POLLING_DIALOGS_FAIL user=%s err=%s", user.id, e)
+
     for source in sources:
         try:
-            entity = await _resolve_source(client, source, user_id=user.id)
+            entity = await _resolve_source(client, source, user_id=user.id, dialog_entities=dialog_entities)
         except Exception as e:
             logger.warning("Polling: cannot resolve source %s for user %s: %s", source.id, user.id, e)
+            continue
+
+        if entity is None:
+            logger.warning("POLLING_RESOLVE_NULL user=%s source=%s", user.id, source.id)
             continue
 
         try:
@@ -332,11 +344,13 @@ async def _poll_new_messages_for_user(user: User, client, bot: Bot):
     new_leads_count, total_new_messages, total_matched = await _search_sources_polling(user, client, bot, sources, keywords)
 
     user_cats = (user.settings or {}).get("categories", []) if user.settings else []
+    logger.info("POLLING_CATEGORIES user=%s categories=%s primary_sources=%d", user.id, user_cats, len(sources))
+
     remaining_sources = []
     if new_leads_count == 0 and user_cats:
         async with AsyncSessionLocal() as session:
             all_sources = (await session.execute(
-                select(Source).where(Source.status == "active")
+                select(Source).where(Source.status == "active", Source.type != "private")
             )).scalars().all()
         remaining_ids = {s.id for s in all_sources} - {s.id for s in sources}
         if remaining_ids:
@@ -466,6 +480,9 @@ async def _resolve_source(client, src, user_id: int | None = None, dialog_entiti
     if username:
         try:
             return await client.get_entity(username)
+        except FloodWaitError as e:
+            logger.warning("RESOLVE_FLOOD_WAIT source=%s username=%s wait=%ss", src.id, username, e.seconds)
+            return None
         except Exception as e:
             logger.debug("RESOLVE_USERNAME_FAIL source=%s username=%s err=%s", src.id, username, e)
     
@@ -473,6 +490,9 @@ async def _resolve_source(client, src, user_id: int | None = None, dialog_entiti
     if chat_id is not None:
         try:
             return await client.get_entity(_normalize_chat_id(chat_id))
+        except FloodWaitError as e:
+            logger.warning("RESOLVE_FLOOD_WAIT source=%s chat_id=%s wait=%ss", src.id, chat_id, e.seconds)
+            return None
         except Exception as e:
             logger.debug("RESOLVE_CHAT_ID_FAIL source=%s chat_id=%s err=%s", src.id, chat_id, e)
     
@@ -549,7 +569,7 @@ async def _get_user_effective_source_ids(user: User) -> set[int]:
     if user.id in _user_effective_source_ids:
         return _user_effective_source_ids[user.id]
     async with AsyncSessionLocal() as session:
-        sources_query = select(Source).where(Source.status == "active")
+        sources_query = select(Source).where(Source.status == "active", Source.type != "private")
         user_cats = (user.settings or {}).get("categories", []) if user.settings else []
         if user_cats:
             normalized_user_cats = [_normalize_category(c) for c in user_cats]
