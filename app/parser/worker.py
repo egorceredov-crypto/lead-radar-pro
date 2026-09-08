@@ -907,7 +907,7 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
             additional = []
             for src in remaining_sources:
                 if src.id in unresolved:
-                    entity = await _resolve(src)
+                    entity = await _resolve(src, dialog_entities)
                     if entity is None or isinstance(entity, Exception):
                         failed_sources.append(src.title or src.username or str(src.id))
                         continue
