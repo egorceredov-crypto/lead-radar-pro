@@ -1308,15 +1308,15 @@ async def handle_text(message: Message):
                                 errors.append(f"{line}: не удалось получить чат ({str(e)[:50]})")
                                 continue
 
-                             chat_id = getattr(entity, "id", chat_id)
-                             if chat_id is None:
-                                 errors.append(f"{line}: не удалось определить ID")
-                                 continue
-                             
-                             username = getattr(entity, "username", None)
-                             title = getattr(entity, "title", None) or getattr(entity, "first_name", None)
-                             
-                             chat_type = _detect_chat_type(entity)
+                            chat_id = getattr(entity, "id", chat_id)
+                            if chat_id is None:
+                                errors.append(f"{line}: не удалось определить ID")
+                                continue
+                            
+                            username = getattr(entity, "username", None)
+                            title = getattr(entity, "title", None) or getattr(entity, "first_name", None)
+                            
+                            chat_type = _detect_chat_type(entity)
 
                             try:
                                 dup = (await session.execute(
