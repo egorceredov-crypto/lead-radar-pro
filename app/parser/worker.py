@@ -830,7 +830,7 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
         except Exception:
             pass
 
-    search_semaphore = asyncio.Semaphore(3)
+    search_semaphore = asyncio.Semaphore(1)
     found = 0
     saved = 0
 
@@ -839,6 +839,7 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
             return 0, 0
         async with search_semaphore:
             try:
+                await asyncio.sleep(1)
                 result = await client(SearchRequest(
                     peer=entity,
                     q=kw.word,
