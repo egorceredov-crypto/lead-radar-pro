@@ -24,6 +24,15 @@ _bot = None
 
 # Защита от повторного запуска исторического поиска по одному источнику
 _running_sources = set()
+# Защита от одновременного исторического поиска для одного пользователя
+_running_users = dict()
+_user_locks: dict[int, asyncio.Lock] = {}
+
+
+def _get_user_lock(user_id: int) -> asyncio.Lock:
+    if user_id not in _user_locks:
+        _user_locks[user_id] = asyncio.Lock()
+    return _user_locks[user_id]
 
 
 async def _get_client():
@@ -59,32 +68,35 @@ async def run_historical_for_user(user_id: int, keyword: str | None = None):
     Иначе ищутся все ключевые слова пользователя.
     """
     logger.info("RUN_HIST_FOR_USER start user_id=%s keyword=%s", user_id, keyword)
+    user_lock = _get_user_lock(user_id)
+
     async def task():
-        try:
-            logger.info("RUN_HIST_FOR_USER getting client for user_id=%s", user_id)
-            client = await _get_client()
-            if client is None:
-                logger.error("RUN_HIST_FOR_USER FAILED user_id=%s reason=no_client", user_id)
-                return
-            logger.info("RUN_HIST_FOR_USER client ok for user_id=%s", user_id)
-            bot = await _get_bot()
-            logger.info("RUN_HIST_FOR_USER bot ok for user_id=%s", user_id)
-            async with AsyncSessionLocal() as session:
-                user = await session.get(User, user_id)
-                if not user:
-                    logger.error("RUN_HIST_FOR_USER FAILED user_id=%s reason=user_not_found", user_id)
+        async with user_lock:
+            try:
+                logger.info("RUN_HIST_FOR_USER getting client for user_id=%s", user_id)
+                client = await _get_client()
+                if client is None:
+                    logger.error("RUN_HIST_FOR_USER FAILED user_id=%s reason=no_client", user_id)
                     return
-                logger.info("RUN_HIST_FOR_USER user found id=%s telegram_id=%s status=%s", user.id, user.telegram_id, user.subscription_status)
-                from app.services.users import check_subscription
-                if not await check_subscription(session, user):
-                    logger.error("RUN_HIST_FOR_USER FAILED user_id=%s reason=subscription_check_failed status=%s", user_id, user.subscription_status)
-                    return
-                logger.info("RUN_HIST_FOR_USER subscription ok for user_id=%s", user_id)
-            logger.info("RUN_HIST_FOR_USER calling _historical_search_for_user user_id=%s keyword=%s", user_id, keyword)
-            await _historical_search_for_user(user, client, bot, keyword=keyword)
-            logger.info("RUN_HIST_FOR_USER completed user_id=%s", user_id)
-        except Exception:
-            logger.exception("RUN_HIST_FOR_USER ERROR user_id=%s", user_id)
+                logger.info("RUN_HIST_FOR_USER client ok for user_id=%s", user_id)
+                bot = await _get_bot()
+                logger.info("RUN_HIST_FOR_USER bot ok for user_id=%s", user_id)
+                async with AsyncSessionLocal() as session:
+                    user = await session.get(User, user_id)
+                    if not user:
+                        logger.error("RUN_HIST_FOR_USER FAILED user_id=%s reason=user_not_found", user_id)
+                        return
+                    logger.info("RUN_HIST_FOR_USER user found id=%s telegram_id=%s status=%s", user.id, user.telegram_id, user.subscription_status)
+                    from app.services.users import check_subscription
+                    if not await check_subscription(session, user):
+                        logger.error("RUN_HIST_FOR_USER FAILED user_id=%s reason=subscription_check_failed status=%s", user_id, user.subscription_status)
+                        return
+                    logger.info("RUN_HIST_FOR_USER subscription ok for user_id=%s", user_id)
+                logger.info("RUN_HIST_FOR_USER calling _historical_search_for_user user_id=%s keyword=%s", user_id, keyword)
+                await _historical_search_for_user(user, client, bot, keyword=keyword)
+                logger.info("RUN_HIST_FOR_USER completed user_id=%s", user_id)
+            except Exception:
+                logger.exception("RUN_HIST_FOR_USER ERROR user_id=%s", user_id)
 
     asyncio.create_task(task())
 
@@ -118,7 +130,9 @@ async def run_historical_for_source(source_id: int):
                         active_users.append(user)
                 users = active_users
             for user in users:
-                await _historical_search_for_source(user, source, client, bot)
+                user_lock = _get_user_lock(user.id)
+                async with user_lock:
+                    await _historical_search_for_source(user, source, client, bot)
         except Exception:
             logger.exception("Historical search for source %s failed", source_id)
         finally:
@@ -146,7 +160,9 @@ async def run_historical_for_all():
                         active_users.append(user)
                 users = active_users
             for user in users:
-                await _historical_search_for_user(user, client, bot)
+                user_lock = _get_user_lock(user.id)
+                async with user_lock:
+                    await _historical_search_for_user(user, client, bot)
         except Exception:
             logger.exception("Historical search for all failed")
 
