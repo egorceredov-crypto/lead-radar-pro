@@ -175,8 +175,7 @@ async def cmd_start(message: Message):
 
 @router.message(F.text == BTN_ADD_KEYWORD)
 async def reply_add_keyword(message: Message):
-    WAITING[message.from_user.id] = {"action": "add_keyword"}
-    await message.answer("Введите ключевое слово:", reply_markup=cancel_kb())
+    await _show_keywords_menu_msg(message)
 
 
 @router.message(F.text == BTN_RESULTS)
