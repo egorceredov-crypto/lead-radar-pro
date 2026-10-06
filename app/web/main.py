@@ -133,7 +133,8 @@ async def chats_add(request: Request):
         if existing.scalar_one_or_none():
             return {"ok": True, "message": "already exists"}
         category = auto_category(title, uname)
-        src = Source(user_id=None, type=chat_type, username=uname, chat_id=int(chat_id), title=title, category=category, status='active')
+        access_hash = getattr(entity, 'access_hash', None)
+        src = Source(user_id=None, type=chat_type, username=uname, chat_id=int(chat_id), title=title, category=category, status='active', access_hash=access_hash)
         session.add(src)
         await session.flush()
         source_id = src.id
@@ -383,7 +384,8 @@ async def chats_add(request: Request):
         if existing.scalar_one_or_none():
             return {"ok": True, "message": "already exists"}
         category = auto_category(title, uname)
-        src = Source(user_id=None, type=chat_type, username=uname, chat_id=int(chat_id), title=title, category=category, status='active')
+        access_hash = getattr(entity, 'access_hash', None)
+        src = Source(user_id=None, type=chat_type, username=uname, chat_id=int(chat_id), title=title, category=category, status='active', access_hash=access_hash)
         session.add(src)
         await session.flush()
         source_id = src.id

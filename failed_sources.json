@@ -1,0 +1,826 @@
+[
+  {
+    "id": 1,
+    "type": "group",
+    "username": "parikmaher_moskvax",
+    "chat_id": 1623333624,
+    "title": "MosPro: Парикмахеры чат 💇‍♂️",
+    "status": "active"
+  },
+  {
+    "id": 4,
+    "type": "group",
+    "username": "makeup_chat_stilist",
+    "chat_id": 2383153615,
+    "title": "💄 Визажисты Стилисты | Бьюти Мастера чат (причёски макияж брови стиль)",
+    "status": "active"
+  },
+  {
+    "id": 5,
+    "type": "group",
+    "username": "barbers_krd",
+    "chat_id": 1512573125,
+    "title": "Барберы Юга",
+    "status": "active"
+  },
+  {
+    "id": 9,
+    "type": "channel",
+    "username": "dsgn_vacancies",
+    "chat_id": 1984946712,
+    "title": "Заказы для дизайнеров | Вакансии",
+    "status": "active"
+  },
+  {
+    "id": 11,
+    "type": "channel",
+    "username": "jobaem",
+    "chat_id": 2213753164,
+    "title": "Jobaem | Заказы дизайнерам",
+    "status": "active"
+  },
+  {
+    "id": 12,
+    "type": "channel",
+    "username": "zakazi_designers",
+    "chat_id": 2200628415,
+    "title": "Заказы для дизайнеров",
+    "status": "active"
+  },
+  {
+    "id": 13,
+    "type": "channel",
+    "username": "design_freevacancies",
+    "chat_id": 2021993854,
+    "title": "Ищу дизайнера | Заказы и вакансии",
+    "status": "active"
+  },
+  {
+    "id": 15,
+    "type": "channel",
+    "username": "vakansi_rus",
+    "chat_id": 1548363362,
+    "title": "Creative Freelancer",
+    "status": "active"
+  },
+  {
+    "id": 17,
+    "type": "channel",
+    "username": "vakansii_dizaynerov",
+    "chat_id": 1930471671,
+    "title": "ВАКАНСИИ ДЛЯ ДИЗАЙНЕРОВ",
+    "status": "active"
+  },
+  {
+    "id": 31,
+    "type": "group",
+    "username": "imVerim",
+    "chat_id": 2123929219,
+    "title": "Добросовестные продавцы WB/Ozon",
+    "status": "active"
+  },
+  {
+    "id": 32,
+    "type": "group",
+    "username": "raspakovkacpek",
+    "chat_id": 2114860076,
+    "title": "💚РАСПАКОВКА💚 ПРОДАВЦЫ СЕЛЛЕРЫ WB OZON",
+    "status": "active"
+  },
+  {
+    "id": 33,
+    "type": "group",
+    "username": "marketplaces_chat",
+    "chat_id": 1544080229,
+    "title": "Маркетплейсы ЧАТ поставщиков",
+    "status": "active"
+  },
+  {
+    "id": 34,
+    "type": "group",
+    "username": "mp_multiply",
+    "chat_id": 1723083992,
+    "title": "Маркетплейсы: чат поставщиков",
+    "status": "active"
+  },
+  {
+    "id": 44,
+    "type": "group",
+    "username": "teletarget",
+    "chat_id": 1129525957,
+    "title": "Таргетологи в телеграм",
+    "status": "active"
+  },
+  {
+    "id": 45,
+    "type": "group",
+    "username": "targettovarka",
+    "chat_id": 1288938934,
+    "title": "Чат таргетологи / товарний бізнес",
+    "status": "active"
+  },
+  {
+    "id": 46,
+    "type": "group",
+    "username": "ppc_traff",
+    "chat_id": 1540322439,
+    "title": "PPC чат | Контекстная реклама",
+    "status": "active"
+  },
+  {
+    "id": 48,
+    "type": "group",
+    "username": "copiwriting_scenarist_chat",
+    "chat_id": 1824602189,
+    "title": "Сценаристы, копирайтеры, писатели | Чат",
+    "status": "active"
+  },
+  {
+    "id": 50,
+    "type": "group",
+    "username": "profreewriter3",
+    "chat_id": 1362466810,
+    "title": "Pro Копирайтинг - чат тренинга",
+    "status": "active"
+  },
+  {
+    "id": 51,
+    "type": "group",
+    "username": "kurs_kopirayting",
+    "chat_id": 1716749093,
+    "title": "Курсы копирайтинга, Чат YL",
+    "status": "active"
+  },
+  {
+    "id": 53,
+    "type": "group",
+    "username": "chatofot",
+    "chat_id": 1798066336,
+    "title": "Фотографы чат",
+    "status": "active"
+  },
+  {
+    "id": 54,
+    "type": "group",
+    "username": "TFP_99",
+    "chat_id": 2112953050,
+    "title": "ЧАТ Модели и фотографы TFP.",
+    "status": "active"
+  },
+  {
+    "id": 55,
+    "type": "group",
+    "username": "videografimsk",
+    "chat_id": 1766594908,
+    "title": "Видеографы МОСКВЫ",
+    "status": "active"
+  },
+  {
+    "id": 56,
+    "type": "group",
+    "username": "fotographi_sochi_zch",
+    "chat_id": 1247717222,
+    "title": "Сочи фотографы и видеографы",
+    "status": "active"
+  },
+  {
+    "id": 57,
+    "type": "group",
+    "username": "qazmobilograf",
+    "chat_id": 1652473102,
+    "title": "Мобилографы / Видеографы / Фотографы Казахстан / СММ SMM / Вакансии / Чат",
+    "status": "active"
+  },
+  {
+    "id": 58,
+    "type": "group",
+    "username": "parikmaheri_chat",
+    "chat_id": 2073864286,
+    "title": "Парикмахеры l Стилисты | Визажисты | Макияж",
+    "status": "active"
+  },
+  {
+    "id": 59,
+    "type": "group",
+    "username": "vizaj_moskva",
+    "chat_id": 1688921215,
+    "title": "MosPro: Визажисты чат 🖌",
+    "status": "active"
+  },
+  {
+    "id": 60,
+    "type": "group",
+    "username": "ph_sahar_hp",
+    "chat_id": 1288057802,
+    "title": "Tfp /модели / фотографы / визажисты / стилисты",
+    "status": "active"
+  },
+  {
+    "id": 61,
+    "type": "group",
+    "username": "vizajist_stlst",
+    "chat_id": 2232223882,
+    "title": "Парикмахеры|Барберы|Визажисты|Стилисты",
+    "status": "active"
+  },
+  {
+    "id": 62,
+    "type": "group",
+    "username": "masteradfjober",
+    "chat_id": 2381671078,
+    "title": "📣ВАКАНСИИ стилисты макияжа визажисты",
+    "status": "active"
+  },
+  {
+    "id": 63,
+    "type": "group",
+    "username": "krasilnisochi",
+    "chat_id": 1875882942,
+    "title": "Чат Барберы России СНГ Европа",
+    "status": "active"
+  },
+  {
+    "id": 64,
+    "type": "group",
+    "username": "club_barber",
+    "chat_id": 2612818397,
+    "title": "Барберы Чат | Барбер Чат | Парикмахеры",
+    "status": "active"
+  },
+  {
+    "id": 65,
+    "type": "group",
+    "username": "moscowbarberscup",
+    "chat_id": 3361976266,
+    "title": "Барберы | Moscow 💈 Chat",
+    "status": "active"
+  },
+  {
+    "id": 66,
+    "type": "group",
+    "username": "barbersmoskow",
+    "chat_id": 2373605857,
+    "title": "Барберы Мск",
+    "status": "active"
+  },
+  {
+    "id": 67,
+    "type": "group",
+    "username": "stilist_chat",
+    "chat_id": 1800584370,
+    "title": "Парикмахеры | Барберы | Стилисты по волосам Чат",
+    "status": "active"
+  },
+  {
+    "id": 68,
+    "type": "channel",
+    "username": "we_are_hairdressers",
+    "chat_id": 1467901970,
+    "title": "Мы ПАРИКМАХЕРЫ",
+    "status": "active"
+  },
+  {
+    "id": 69,
+    "type": "group",
+    "username": "nail_chat_ru",
+    "chat_id": 1916970121,
+    "title": "Nail чат | Мастера маникюра 💅🏼",
+    "status": "active"
+  },
+  {
+    "id": 70,
+    "type": "group",
+    "username": "manikyura_mastera",
+    "chat_id": 2210729495,
+    "title": "Чат Мастеров Маникюра",
+    "status": "active"
+  },
+  {
+    "id": 71,
+    "type": "group",
+    "username": "Nail_mastera",
+    "chat_id": 1206359371,
+    "title": "💅 Чат мастеров маникюра",
+    "status": "active"
+  },
+  {
+    "id": 72,
+    "type": "group",
+    "username": "manik_chatik",
+    "chat_id": 1701747316,
+    "title": "МАСТЕР МАНИКЮРА ЧАТ 💅🏼",
+    "status": "active"
+  },
+  {
+    "id": 73,
+    "type": "group",
+    "username": "nailclubs",
+    "chat_id": 2121000116,
+    "title": "Nail Club | Чат Мастеров Маникюра",
+    "status": "active"
+  },
+  {
+    "id": 74,
+    "type": "group",
+    "username": "manicure_russia",
+    "chat_id": 1670356443,
+    "title": "Мастера маникюра Москвы",
+    "status": "active"
+  },
+  {
+    "id": 75,
+    "type": "group",
+    "username": "beutymaster",
+    "chat_id": 1460156655,
+    "title": "Beauty group/Мастера/маникюра",
+    "status": "active"
+  },
+  {
+    "id": 77,
+    "type": "group",
+    "username": "lashmaker_chat_ru",
+    "chat_id": 2138562576,
+    "title": "Лэшмейкеры|Бровисты|Перманент - Чат Мастеров",
+    "status": "active"
+  },
+  {
+    "id": 78,
+    "type": "group",
+    "username": "podslushano_brovist",
+    "chat_id": 1463756103,
+    "title": "ПОДСЛУШАНО БРОВИСТЫ ЧАТ БРОВИ",
+    "status": "active"
+  },
+  {
+    "id": 79,
+    "type": "channel",
+    "username": "lamibrowru",
+    "chat_id": 1803899958,
+    "title": "ЛАМИ БРОВИ РЕСНИЦЫ",
+    "status": "active"
+  },
+  {
+    "id": 80,
+    "type": "group",
+    "username": "lamimekeru",
+    "chat_id": 2211000771,
+    "title": "Ламимейкер и Бровисты",
+    "status": "active"
+  },
+  {
+    "id": 81,
+    "type": "group",
+    "username": "broviru",
+    "chat_id": 3090629171,
+    "title": "БРОВИ | БРОВИСТЫ | ОБУЧЕНИЕ",
+    "status": "active"
+  },
+  {
+    "id": 82,
+    "type": "group",
+    "username": "brovistika",
+    "chat_id": 1247503758,
+    "title": "Бровисты новички🌸",
+    "status": "active"
+  },
+  {
+    "id": 83,
+    "type": "group",
+    "username": "modelkaz",
+    "chat_id": 2224793950,
+    "title": "Ищу Мастера | Модель Казань | Брови, ресницы, макияж и т.д",
+    "status": "active"
+  },
+  {
+    "id": 84,
+    "type": "group",
+    "username": "massagchatik",
+    "chat_id": 1868598757,
+    "title": "Массажисты Чат",
+    "status": "active"
+  },
+  {
+    "id": 86,
+    "type": "group",
+    "username": "massagistchat",
+    "chat_id": 2329371756,
+    "title": "Массажисты и Массаж",
+    "status": "active"
+  },
+  {
+    "id": 87,
+    "type": "group",
+    "username": "massagenarezultat",
+    "chat_id": 2632739866,
+    "title": "Массажисты, к которым стоит записаться",
+    "status": "active"
+  },
+  {
+    "id": 88,
+    "type": "group",
+    "username": "chat_repetitori_help",
+    "chat_id": 1966159435,
+    "title": "Репетиторы чат",
+    "status": "active"
+  },
+  {
+    "id": 89,
+    "type": "group",
+    "username": "repetitormoskv",
+    "chat_id": 1534179074,
+    "title": "Репетиторы Москва - Онлайн чат.",
+    "status": "active"
+  },
+  {
+    "id": 90,
+    "type": "group",
+    "username": "xoy_repetitor",
+    "chat_id": 1648366823,
+    "title": "ХОУ Репетиторы - Онлайн чат.",
+    "status": "active"
+  },
+  {
+    "id": 91,
+    "type": "group",
+    "username": "repetitor_repetitori",
+    "chat_id": 2163734472,
+    "title": "РЕПЕТИТОРЫ ИЩУ репетитора",
+    "status": "active"
+  },
+  {
+    "id": 92,
+    "type": "group",
+    "username": "repetitorsonline",
+    "chat_id": 1254259204,
+    "title": "РЕПЕТИТОРЫ ОНЛАЙН",
+    "status": "active"
+  },
+  {
+    "id": 93,
+    "type": "group",
+    "username": "repetitory_chat",
+    "chat_id": 1396235113,
+    "title": "Ассоциация Репетиторов_ ОТЗЫВЫ _ВАКАНСИИ",
+    "status": "active"
+  },
+  {
+    "id": 94,
+    "type": "group",
+    "username": "cyschools",
+    "chat_id": 1545841086,
+    "title": "Кипр | Школы, репетиторы, доп. образование, детские ивенты, вакансии",
+    "status": "active"
+  },
+  {
+    "id": 97,
+    "type": "group",
+    "username": "repetitorsonline2",
+    "chat_id": 2161584733,
+    "title": "РЕПЕТИТОРЫ ОНЛАЙН V2 📚",
+    "status": "active"
+  },
+  {
+    "id": 99,
+    "type": "group",
+    "username": "Dm_fastauto_chat",
+    "chat_id": 2157015864,
+    "title": "Авто_Дмитров | Чат 🚘",
+    "status": "active"
+  },
+  {
+    "id": 100,
+    "type": "group",
+    "username": "chatcspectexnika",
+    "chat_id": 1802684934,
+    "title": "Автомобили и коммерческая техника MD-CARS",
+    "status": "active"
+  },
+  {
+    "id": 101,
+    "type": "group",
+    "username": "chatperviiperekupskii",
+    "chat_id": 3322583410,
+    "title": "ОБЩИЙ ЧАТ АВТОЛЮБИТЕЛЕЙ",
+    "status": "active"
+  },
+  {
+    "id": 103,
+    "type": "group",
+    "username": "stroiteli_moskva",
+    "chat_id": 1162169448,
+    "title": "Строительство Москва Чат N1",
+    "status": "active"
+  },
+  {
+    "id": 105,
+    "type": "group",
+    "username": "rabotat_moskvevre",
+    "chat_id": 2441396751,
+    "title": "📣 Вакансии: Строители Москва",
+    "status": "active"
+  },
+  {
+    "id": 106,
+    "type": "group",
+    "username": "stroiteli_moscow",
+    "chat_id": 1339088562,
+    "title": "СТРОИТЕЛИ МОСКВЫ",
+    "status": "active"
+  },
+  {
+    "id": 107,
+    "type": "group",
+    "username": "job_stroiteli",
+    "chat_id": 1685481181,
+    "title": "Строители | Работа | Вакансии",
+    "status": "active"
+  },
+  {
+    "id": 109,
+    "type": "group",
+    "username": "stroitelstvomos",
+    "chat_id": 1950508945,
+    "title": "Грузчики|Разнорабочие|Отделочники|Москва и область",
+    "status": "active"
+  },
+  {
+    "id": 110,
+    "type": "group",
+    "username": "artstrit",
+    "chat_id": 1418053111,
+    "title": "Отделочники Красноярска и не только 🧱",
+    "status": "active"
+  },
+  {
+    "id": 112,
+    "type": "group",
+    "username": "vipclean24",
+    "chat_id": 1710217614,
+    "title": "ЧАТ Клинеры®/ клининг / работа",
+    "status": "active"
+  },
+  {
+    "id": 115,
+    "type": "group",
+    "username": "ya_kliner",
+    "chat_id": 1635710443,
+    "title": "\"Я КЛИНЕР\" клининг, клинеры России",
+    "status": "active"
+  },
+  {
+    "id": 116,
+    "type": "group",
+    "username": "yakliner_spb",
+    "chat_id": 1742085471,
+    "title": "\"Я КЛИНЕР САНКТ-ПЕТЕРБУРГ\" (клининг, клинеры)",
+    "status": "active"
+  },
+  {
+    "id": 117,
+    "type": "group",
+    "username": "CliniryNovosibirsk",
+    "chat_id": 1614145069,
+    "title": "Клинеры Новосибирск",
+    "status": "active"
+  },
+  {
+    "id": 118,
+    "type": "group",
+    "username": "gruzallrussia",
+    "chat_id": 1794856939,
+    "title": "1001 ГРУЗ ЧАТ / Логистика и грузоперевозки",
+    "status": "active"
+  },
+  {
+    "id": 119,
+    "type": "group",
+    "username": "gruzoperevozky_chat",
+    "chat_id": 2200609046,
+    "title": "Рейсы/Грузы Дальнобойщики 🇷🇺",
+    "status": "active"
+  },
+  {
+    "id": 120,
+    "type": "group",
+    "username": "gruzoperevozki_chat_bota",
+    "chat_id": 1526644557,
+    "title": "Грузоперевозки Перевозки Грузы Логистика",
+    "status": "active"
+  },
+  {
+    "id": 121,
+    "type": "group",
+    "username": "rucargoru",
+    "chat_id": 1830800642,
+    "title": "ГРУЗОПЕРЕВОЗКИ | СНГ | ЕС | АЗИЯ | ЧАТ",
+    "status": "active"
+  },
+  {
+    "id": 122,
+    "type": "group",
+    "username": "doneck_travel",
+    "chat_id": 1941545303,
+    "title": "Перевозчики Донецкая область",
+    "status": "active"
+  },
+  {
+    "id": 123,
+    "type": "group",
+    "username": "driver_rf",
+    "chat_id": 1661042087,
+    "title": "Водители России. Машинисты. Грузоперевозки",
+    "status": "active"
+  },
+  {
+    "id": 124,
+    "type": "group",
+    "username": "akum_tashkent",
+    "chat_id": 1442261161,
+    "title": "\"АКУМ\" Грузоперевозки и Водители. Аккумуляторы. +998933931684",
+    "status": "active"
+  },
+  {
+    "id": 125,
+    "type": "group",
+    "username": "fincomtech_drivers",
+    "chat_id": 1618785795,
+    "title": "Грузоперевозки, водители и курьеры",
+    "status": "active"
+  },
+  {
+    "id": 128,
+    "type": "channel",
+    "username": "truckwork",
+    "chat_id": 1701985894,
+    "title": "Truck Work - трудоустройство в транспортные компании Европы ! 🇪🇺",
+    "status": "active"
+  },
+  {
+    "id": 129,
+    "type": "group",
+    "username": "rieltor_russia_top",
+    "chat_id": 1331275982,
+    "title": "Риелторы России. Чат",
+    "status": "active"
+  },
+  {
+    "id": 130,
+    "type": "group",
+    "username": "kazan_rieltor_chat",
+    "chat_id": 2497323073,
+    "title": "КАЗАНЬ|РИЕЛТОРЫ⚡️",
+    "status": "active"
+  },
+  {
+    "id": 131,
+    "type": "group",
+    "username": "chat_pielt72",
+    "chat_id": 2342400783,
+    "title": "Риелторы Тюмени | чат",
+    "status": "active"
+  },
+  {
+    "id": 133,
+    "type": "group",
+    "username": "chatt_pkhuket",
+    "chat_id": 1533190201,
+    "title": "Барахолка Пхукет 🇹🇭 Недвижимость",
+    "status": "active"
+  },
+  {
+    "id": 134,
+    "type": "group",
+    "username": "best_realtor",
+    "chat_id": 1268122709,
+    "title": "ЧАТ: Недвижимость и Ипотека",
+    "status": "active"
+  },
+  {
+    "id": 135,
+    "type": "group",
+    "username": "agentstva_buxara",
+    "chat_id": 1492168335,
+    "title": "Агентство Недвижимости Бухара",
+    "status": "active"
+  },
+  {
+    "id": 136,
+    "type": "group",
+    "username": "ecohousepartners",
+    "chat_id": 1966168357,
+    "title": "Ecohouse | Агентства недвижимости",
+    "status": "active"
+  },
+  {
+    "id": 137,
+    "type": "group",
+    "username": "chat_biznes_kadrovik",
+    "chat_id": 1061402551,
+    "title": "🧮 Бухгалтеры РОССИИ🇷🇺",
+    "status": "active"
+  },
+  {
+    "id": 138,
+    "type": "group",
+    "username": "buhgalterskij_netvorking_chat",
+    "chat_id": 1882383888,
+    "title": "Бухгалтерский нетворкинг чат | бухгалтерский чат | бухгалтер | бухгалтерия | бухгалтеры",
+    "status": "active"
+  },
+  {
+    "id": 139,
+    "type": "group",
+    "username": "buhkzchat",
+    "chat_id": 1213837477,
+    "title": "🇰🇿 Бухгалтеры Казахстана. Общий чат.",
+    "status": "active"
+  },
+  {
+    "id": 140,
+    "type": "group",
+    "username": "buhvseyarusi",
+    "chat_id": 1450252002,
+    "title": "Бухгалтеры всея Руси",
+    "status": "active"
+  },
+  {
+    "id": 142,
+    "type": "group",
+    "username": "buhgalteriii",
+    "chat_id": 1609952840,
+    "title": "Бухгалтеры",
+    "status": "active"
+  },
+  {
+    "id": 143,
+    "type": "group",
+    "username": "education_chat1",
+    "chat_id": 1546252945,
+    "title": "Про продажи 💬",
+    "status": "active"
+  },
+  {
+    "id": 144,
+    "type": "group",
+    "username": "KUPITUSH",
+    "chat_id": 1713832597,
+    "title": "БИРЖА | ЧАТ ПРОДАЖИ КАНАЛОВ",
+    "status": "active"
+  },
+  {
+    "id": 146,
+    "type": "channel",
+    "username": "leadhero_tech",
+    "chat_id": 1599784597,
+    "title": "ИИ менеджеры по продажам от Leadhero.tech",
+    "status": "active"
+  },
+  {
+    "id": 148,
+    "type": "group",
+    "username": "biznes_chat",
+    "chat_id": 1371121321,
+    "title": "🦁 БИЗНЕС-ЧАТ № 1 | Предприниматели | Нетворкинг",
+    "status": "active"
+  },
+  {
+    "id": 151,
+    "type": "group",
+    "username": "InvestBizUslugi",
+    "chat_id": 1260420980,
+    "title": "Инвестиции. Услуги для бизнеса",
+    "status": "active"
+  },
+  {
+    "id": 155,
+    "type": "group",
+    "username": "chat_groomer",
+    "chat_id": 1765186669,
+    "title": "ЧАТ ГРУМЕРОВ №1",
+    "status": "active"
+  },
+  {
+    "id": 156,
+    "type": "group",
+    "username": "groomchat",
+    "chat_id": 1247751994,
+    "title": "Сообщество грумеров",
+    "status": "active"
+  },
+  {
+    "id": 158,
+    "type": "group",
+    "username": "test_new_chat",
+    "chat_id": -100999999999,
+    "title": "Test New Chat",
+    "status": "active"
+  },
+  {
+    "id": 159,
+    "type": "group",
+    "username": "test_new_chat",
+    "chat_id": -100999999999,
+    "title": "Test Barber Shop",
+    "status": "active"
+  }
+]

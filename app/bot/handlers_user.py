@@ -1327,6 +1327,7 @@ async def handle_text(message: Message):
                                     continue
                                 if not category:
                                     category = auto_category(title, username)
+                                access_hash = getattr(entity, "access_hash", None)
                                 src = Source(
                                     type=chat_type,
                                     username=username,
@@ -1334,6 +1335,7 @@ async def handle_text(message: Message):
                                     title=title,
                                     category=category,
                                     status="active",
+                                    access_hash=access_hash,
                                 )
                                 session.add(src)
                                 await session.flush()

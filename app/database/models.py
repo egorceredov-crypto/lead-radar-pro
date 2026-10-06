@@ -178,6 +178,7 @@ class Source(Base):
     status = Column(String, default="active")
     last_checked_message_id = Column(BigInteger, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    access_hash = Column(BigInteger, nullable=True)
 
 
 class Subscription(Base):

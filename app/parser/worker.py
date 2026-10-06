@@ -444,20 +444,23 @@ def _normalize_chat_id(chat_id: int) -> int:
 async def _resolve_source(client, src, user_id: int | None = None, dialog_entities: list | None = None):
     """Resolve a Source to a Telethon entity.
     
-    For personal dialogs (positive chat_id): prefer matching against
-    cached dialog entities instead of get_entity, because Telethon
-    cannot always resolve arbitrary user IDs unless cached.
+    Always prefer matching against cached dialog entities first,
+    because Telethon cannot always resolve arbitrary IDs unless cached,
+    and repeated get_entity calls can trigger FloodWait.
     
-    For groups/channels (negative chat_id / username): try
-    get_entity first, then fall back to cached dialog entities.
+    If not found in cached dialogs and access_hash is known, build
+    InputPeer directly from stored chat_id / username / access_hash.
+    
+    Only as a last resort call get_entity().
     
     dialog_entities: optional pre-fetched list of dialog entities.
     """
+    from telethon.tl.types import InputPeerChannel, InputPeerChat
+    
     chat_id = getattr(src, "chat_id", None)
     title = getattr(src, "title", None) or ""
     username = getattr(src, "username", None) or ""
-    
-    is_likely_user = isinstance(chat_id, int) and chat_id > 0
+    access_hash = getattr(src, "access_hash", None)
     
     def _match_entity(entity):
         dialog_title = getattr(entity, "title", None) or getattr(entity, "first_name", None) or ""
@@ -466,17 +469,24 @@ async def _resolve_source(client, src, user_id: int | None = None, dialog_entiti
             return True
         if username and dialog_username and username.lower() == dialog_username.lower():
             return True
-        if is_likely_user and str(chat_id) == str(getattr(entity, "id", None)):
+        if isinstance(chat_id, int) and chat_id > 0 and str(chat_id) == str(getattr(entity, "id", None)):
             return True
         return False
     
-    # 1) For likely personal dialogs, scan cached dialogs first.
-    if is_likely_user and dialog_entities is not None:
+    # 1) Always scan cached dialogs first.
+    if dialog_entities is not None:
         for entity in dialog_entities:
             if _match_entity(entity):
                 return entity
     
-    # 2) Try username via get_entity.
+    # 2) If we have access_hash, build InputPeer directly without get_entity.
+    if chat_id is not None and access_hash is not None:
+        try:
+            return InputPeerChannel(channel_id=_normalize_chat_id(chat_id), access_hash=access_hash)
+        except Exception as e:
+            logger.debug("RESOLVE_INPUTPEER_FAIL source=%s chat_id=%s err=%s", src.id, chat_id, e)
+    
+    # 3) Try username via get_entity.
     if username:
         try:
             return await client.get_entity(username)
@@ -486,7 +496,7 @@ async def _resolve_source(client, src, user_id: int | None = None, dialog_entiti
         except Exception as e:
             logger.debug("RESOLVE_USERNAME_FAIL source=%s username=%s err=%s", src.id, username, e)
     
-    # 3) Try chat_id via get_entity.
+    # 4) Try chat_id via get_entity.
     if chat_id is not None:
         try:
             return await client.get_entity(_normalize_chat_id(chat_id))
@@ -496,14 +506,8 @@ async def _resolve_source(client, src, user_id: int | None = None, dialog_entiti
         except Exception as e:
             logger.debug("RESOLVE_CHAT_ID_FAIL source=%s chat_id=%s err=%s", src.id, chat_id, e)
     
-    # 4) Final fallback: scan cached dialogs by title/username/id.
-    if dialog_entities is not None:
-        for entity in dialog_entities:
-            if _match_entity(entity):
-                return entity
-    
-    logger.warning("RESOLVE_SOURCE_FAIL user=%s source=%s title=%s username=%s chat_id=%s", 
-                   user_id, src.id, title, username, chat_id)
+    logger.warning("RESOLVE_SOURCE_FAIL user=%s source=%s title=%s username=%s chat_id=%s access_hash=%s", 
+                   user_id, src.id, title, username, chat_id, access_hash)
     return None
 
 
@@ -785,9 +789,6 @@ async def _historical_search_for_user(user: User, client, bot: Bot, keyword: str
         logger.error("HIST_SEARCH_MSG_FAILED user=%s err=%s", user.id, e)
 
     search_sources = sources
-    if keyword and len(sources) > QUICK_SEARCH_SOURCES_LIMIT:
-        search_sources = sources[:QUICK_SEARCH_SOURCES_LIMIT]
-        logger.info("HIST_SEARCH_QUICK user=%s keyword=%s limited_sources=%s", user.id, keyword, len(search_sources))
 
     async def _resolve(src, dialog_entities):
         async with _resolve_semaphore:
@@ -979,6 +980,7 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                 if not source:
                     chat_type = _detect_chat_type(chat)
                     category = auto_category(chat_title, chat_username)
+                    access_hash = getattr(chat, "access_hash", None)
                     source = Source(
                         type=chat_type,
                         username=chat_username,
@@ -986,6 +988,7 @@ async def _monitor_new_messages(client, user_id: int, bot: Bot):
                         title=chat_title,
                         category=category,
                         status="active",
+                        access_hash=access_hash,
                     )
                     session.add(source)
                     await session.flush()
@@ -1138,6 +1141,7 @@ async def main(bot=None):
                             continue
 
                         category = auto_category(title, username)
+                        access_hash = getattr(chat, "access_hash", None)
                         src = Source(
                             type=chat_type,
                             username=username,
@@ -1145,6 +1149,7 @@ async def main(bot=None):
                             title=title,
                             category=category,
                             status="active",
+                            access_hash=access_hash,
                         )
                         session.add(src)
                         await session.flush()
