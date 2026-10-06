@@ -91,14 +91,11 @@ def user_categories_kb(selected: list[str]) -> InlineKeyboardMarkup:
 
 def keywords_menu_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="Список слов", callback_data="kw:list")
-    kb.button(text="🔑 Добавить слово", callback_data="kw:add")
+    kb.button(text="➕ Добавить слово", callback_data="kw:add")
+    kb.button(text="Мои слова", callback_data="kw:list")
     kb.button(text="Удалить слово", callback_data="kw:del_menu")
-    kb.button(text="Стоп-слова", callback_data="kw:stop")
-    kb.button(text="Импорт слов", callback_data="kw:import")
-    kb.button(text="Экспорт слов", callback_data="kw:export")
-    kb.button(text="Главная", callback_data="home")
-    kb.adjust(2)
+    kb.button(text="Назад", callback_data="home")
+    kb.adjust(1, 2, 1)
     return kb.as_markup()
 
 
@@ -106,7 +103,7 @@ def keyword_actions_kb(word_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="Изменить", callback_data=f"kw:edit:{word_id}")
     kb.button(text="Удалить", callback_data=f"kw:del:{word_id}")
-    kb.button(text="Ключевые слова", callback_data="kw:list")
+    kb.button(text="Назад", callback_data="kw:menu")
     kb.adjust(1)
     return kb.as_markup()
 
@@ -116,7 +113,7 @@ def keyword_delete_kb(keywords: list) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for kw in keywords:
         kb.button(text=kw.word, callback_data=f"kw:del:{kw.id}")
-    kb.button(text="Ключевые слова", callback_data="kw:menu")
+    kb.button(text="Назад", callback_data="kw:menu")
     kb.adjust(2)
     return kb.as_markup()
 
