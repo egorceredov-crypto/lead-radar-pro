@@ -274,6 +274,51 @@ async def _open_category_search(user_id: int, message: Message):
     )
 
 
+async def _show_results(message: Message):
+    async with AsyncSessionLocal() as session:
+        user = await _get_user(session, message.from_user.id)
+        leads = (await session.execute(
+            select(Lead).where(Lead.user_id == user.id).order_by(Lead.created_at.desc())
+        )).scalars().all()
+
+        total = (await session.execute(
+            select(func.count()).select_from(Lead).where(Lead.user_id == user.id)
+        )).scalar_one()
+
+        if not leads:
+            await message.answer(NO_LEADS, parse_mode="HTML")
+            return
+
+        lead_ids = [l.id for l in leads]
+        WAITING[message.from_user.id] = {
+            "action": "results_view",
+            "lead_ids": lead_ids,
+            "index": 0,
+            "total": total,
+        }
+        header = f"Всего лидов: {total}\n\n"
+        await _show_lead_card(message, leads[0], 0, len(leads), header=header)
+
+
+async def _show_lead_card(message: Message, lead: Lead, index: int, total: int, header: str = ""):
+    date = lead.lead_date.strftime("%d.%m %H:%M") if lead.lead_date else ""
+    text = (header or "") + LEAD_CARD.format(
+        matched=lead.matched_keyword or "—",
+        chat_title=lead.chat_title or "Источник",
+        sender=lead.sender_username or "—",
+        date=date,
+        text=(lead.text or "")[:2000],
+    )
+    kb = InlineKeyboardBuilder()
+    if lead.link:
+        kb.button(text="Открыть", url=lead.link)
+    kb.button(text="◀️ Назад", callback_data="results:prev")
+    kb.button(text=f"{index + 1}/{total} — нажмите, чтобы выбрать", callback_data="results:pick")
+    kb.button(text="Следующий ▶️", callback_data="results:next")
+    kb.adjust(2, 1, 2)
+    await message.answer(text, reply_markup=kb.as_markup(), parse_mode="HTML")
+
+
 # ============ ПОИСК: callback-шаги ============
 
 @router.callback_query(F.data == "home")
