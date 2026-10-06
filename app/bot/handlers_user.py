@@ -52,13 +52,15 @@ WAITING = {}
 SEARCH_MODE = {}
 
 # Тексты reply-кнопок (должны совпадать с app/bot/keyboards.py)
-BTN_SEARCH = "Поиск"
-BTN_RESULTS = "Результаты"
-BTN_KEYWORDS = "Слова"
-BTN_STATS = "Статистика"
-BTN_HELP = "Помощь"
+BTN_ADD_KEYWORD = "➕ Добавить слово"
+BTN_RESULTS = "Найденные лиды"
+BTN_CATEGORIES = "Категории"
+BTN_SEARCH = "Запустить поиск"
+BTN_SETTINGS = "Настройки"
 BTN_PROFILE = "Профиль"
-BTN_ADMIN = "Админ панель"
+BTN_SUBSCRIBE = "Подписка"
+BTN_HELP = "Помощь"
+BTN_ADMIN = "/admin"
 
 
 def is_admin(user_id: int) -> bool:
@@ -171,27 +173,10 @@ async def cmd_start(message: Message):
 
 # ============ REPLY-КНОПКИ (нижняя навигация) ============
 
-@router.message(F.text == BTN_SEARCH)
-async def reply_search(message: Message):
-    await _open_category_search(message.from_user.id, message)
-
-
-async def _open_category_search(user_id: int, message: Message):
-    SEARCH_MODE[user_id] = True
-    async with AsyncSessionLocal() as session:
-        user = await _get_user(session, user_id)
-        cats = (user.settings or {}).get("categories", []) if user.settings else []
-    text = (
-        "<b>Категории</b>\n\n"
-        "Нажимай на категории, чтобы выбрать/убрать.\n"
-        "Выбрано: " + (", ".join(cats) if cats else "все") + "\n\n"
-        "Когда готов — жми «Сохранить выбор»"
-    )
-    await message.answer(
-        text,
-        reply_markup=user_categories_kb(cats),
-        parse_mode="HTML",
-    )
+@router.message(F.text == BTN_ADD_KEYWORD)
+async def reply_add_keyword(message: Message):
+    WAITING[message.from_user.id] = {"action": "add_keyword"}
+    await message.answer("Введите ключевое слово:", reply_markup=cancel_kb())
 
 
 @router.message(F.text == BTN_RESULTS)
@@ -199,211 +184,26 @@ async def reply_results(message: Message):
     await _show_results(message)
 
 
-async def _show_results(message: Message):
+@router.message(F.text == BTN_CATEGORIES)
+async def reply_categories(message: Message):
     async with AsyncSessionLocal() as session:
         user = await _get_user(session, message.from_user.id)
-        leads = (await session.execute(
-            select(Lead).where(Lead.user_id == user.id).order_by(Lead.created_at.desc())
-        )).scalars().all()
-
-        total = (await session.execute(
-            select(func.count()).select_from(Lead).where(Lead.user_id == user.id)
-        )).scalar_one()
-
-        if not leads:
-            await message.answer(NO_LEADS, parse_mode="HTML")
-            return
-
-        lead_ids = [l.id for l in leads]
-        WAITING[message.from_user.id] = {
-            "action": "results_view",
-            "lead_ids": lead_ids,
-            "index": 0,
-            "total": total,
-        }
-        header = f"Всего лидов: {total}\n\n"
-        await _show_lead_card(message, leads[0], 0, len(leads), header=header)
-
-
-async def _show_lead_card(message: Message, lead: Lead, index: int, total: int, header: str = ""):
-    date = lead.lead_date.strftime("%d.%m %H:%M") if lead.lead_date else ""
-    text = (header or "") + LEAD_CARD.format(
-        matched=lead.matched_keyword or "—",
-        chat_title=lead.chat_title or "Источник",
-        sender=lead.sender_username or "—",
-        date=date,
-        text=(lead.text or "")[:2000],
-    )
-    kb = InlineKeyboardBuilder()
-    if lead.link:
-        kb.button(text="Открыть", url=lead.link)
-    kb.button(text="◀️ Назад", callback_data="results:prev")
-    kb.button(text=f"{index + 1}/{total} — нажмите, чтобы выбрать", callback_data="results:pick")
-    kb.button(text="Следующий ▶️", callback_data="results:next")
-    kb.adjust(2, 1, 2)
-    await message.answer(text, reply_markup=kb.as_markup(), parse_mode="HTML")
-
-
-@router.callback_query(F.data == "results:prev")
-async def cb_results_prev(cb: CallbackQuery):
-    state = WAITING.get(cb.from_user.id)
-    if not state or state.get("action") != "results_view":
-        await cb.answer("Сначала откройте Результаты")
+        cats = (user.settings or {}).get("categories", []) if user.settings else []
+    if not cats:
+        await message.answer(NO_CATEGORIES, reply_markup=categories_menu_kb(), parse_mode="HTML")
         return
-    ids = state["lead_ids"]
-    total = state.get("total", len(ids))
-    idx = state["index"] - 1
-    if idx < 0:
-        idx = len(ids) - 1
-    state["index"] = idx
-    async with AsyncSessionLocal() as session:
-        lead = await session.get(Lead, ids[idx])
-    if lead:
-        header = f"Всего лидов: {total}\n\n"
-        await cb.message.edit_text(header + LEAD_CARD.format(
-            matched=lead.matched_keyword or "—",
-            chat_title=lead.chat_title or "Источник",
-            sender=lead.sender_username or "—",
-            date=lead.lead_date.strftime("%d.%m %H:%M") if lead.lead_date else "",
-            text=(lead.text or "")[:2000],
-        ),
-                                   reply_markup=_results_kb(idx, total, lead.link, lead.id), parse_mode="HTML")
-    await cb.answer()
+    text = CATEGORIES_TEXT.format(categories="\n".join(f"• {c}" for c in cats))
+    await message.answer(text, reply_markup=categories_menu_kb(), parse_mode="HTML")
 
 
-@router.callback_query(F.data == "results:next")
-async def cb_results_next(cb: CallbackQuery):
-    state = WAITING.get(cb.from_user.id)
-    if not state or state.get("action") != "results_view":
-        await cb.answer("Сначала откройте Результаты")
-        return
-    ids = state["lead_ids"]
-    total = state.get("total", len(ids))
-    idx = state["index"] + 1
-    if idx >= len(ids):
-        idx = 0
-    state["index"] = idx
-    async with AsyncSessionLocal() as session:
-        lead = await session.get(Lead, ids[idx])
-    if lead:
-        header = f"Всего лидов: {total}\n\n"
-        await cb.message.edit_text(header + LEAD_CARD.format(
-            matched=lead.matched_keyword or "—",
-            chat_title=lead.chat_title or "Источник",
-            sender=lead.sender_username or "—",
-            date=lead.lead_date.strftime("%d.%m %H:%M") if lead.lead_date else "",
-            text=(lead.text or "")[:2000],
-        ),
-                                   reply_markup=_results_kb(idx, total, lead.link, lead.id), parse_mode="HTML")
-    await cb.answer()
+@router.message(F.text == BTN_SEARCH)
+async def reply_search(message: Message):
+    await _open_category_search(message.from_user.id, message)
 
 
-@router.callback_query(F.data == "results:pick")
-async def cb_results_pick(cb: CallbackQuery):
-    state = WAITING.get(cb.from_user.id)
-    if not state or state.get("action") != "results_view":
-        await cb.answer("Сначала откройте Результаты")
-        return
-    total = state.get("total", len(state.get("lead_ids", [])))
-    WAITING[cb.from_user.id] = {"action": "results_pick", "lead_ids": state["lead_ids"], "total": total}
-    await cb.message.edit_text(f"Введите номер лида (1–{total}):", reply_markup=cancel_kb())
-    await cb.answer()
-
-
-@router.callback_query(F.data.startswith("results:delete:"))
-async def cb_results_delete(cb: CallbackQuery):
-    state = WAITING.get(cb.from_user.id)
-    if not state or state.get("action") != "results_view":
-        await cb.answer("Сначала откройте Результаты")
-        return
-    lead_id = int(cb.data.split(":", 2)[2])
-    async with AsyncSessionLocal() as session:
-        lead = await session.get(Lead, lead_id)
-        if not lead:
-            await cb.answer("Лид не найден")
-            return
-        db_user = (await session.execute(
-            select(User).where(User.telegram_id == cb.from_user.id)
-        )).scalar_one_or_none()
-        if not db_user or lead.user_id != db_user.id:
-            await cb.answer("Лид не найден")
-            return
-        await session.delete(lead)
-        await session.commit()
-        total = (await session.execute(
-            select(func.count()).select_from(Lead).where(Lead.user_id == db_user.id)
-        )).scalar_one()
-        state["total"] = total
-        await cb.answer("Лид удалён")
-    ids = state["lead_ids"]
-    ids.remove(lead_id)
-    if not ids:
-        WAITING.pop(cb.from_user.id, None)
-        await cb.message.edit_text("Нет результатов.", parse_mode="HTML")
-        return
-    idx = state["index"]
-    if idx >= len(ids):
-        idx = 0
-    state["index"] = idx
-    total = state.get("total", len(ids))
-    async with AsyncSessionLocal() as session:
-        new_lead = await session.get(Lead, ids[idx])
-    if new_lead:
-        header = f"Всего лидов: {total}\n\n"
-        await cb.message.edit_text(header + LEAD_CARD.format(
-            matched=new_lead.matched_keyword or "—",
-            chat_title=new_lead.chat_title or "Источник",
-            sender=new_lead.sender_username or "—",
-            date=new_lead.lead_date.strftime("%d.%m %H:%M") if new_lead.lead_date else "",
-            text=(new_lead.text or "")[:2000],
-        ),
-                                   reply_markup=_results_kb(idx, total, new_lead.link, new_lead.id), parse_mode="HTML")
-
-
-def _results_kb(index: int, total: int, link: str | None = None, lead_id: int | None = None) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    if link:
-        kb.button(text="Открыть", url=link)
-    kb.button(text="◀️ Назад", callback_data="results:prev")
-    kb.button(text=f"{index + 1}/{total} — нажмите, чтобы выбрать", callback_data="results:pick")
-    kb.button(text="Следующий ▶️", callback_data="results:next")
-    if lead_id:
-        kb.button(text="🗑 Удалить", callback_data=f"results:delete:{lead_id}")
-    kb.adjust(2, 1, 2)
-    return kb.as_markup()
-
-
-@router.message(F.text == BTN_KEYWORDS)
-async def reply_keywords(message: Message):
-    await message.answer("<b>Слова</b>\n\nУправление словами для поиска.",
-                         reply_markup=keywords_menu_kb(), parse_mode="HTML")
-
-
-@router.message(F.text == BTN_STATS)
-async def reply_stats(message: Message):
-    await _show_stats(message)
-
-
-async def _show_stats(message: Message):
-    async with AsyncSessionLocal() as session:
-        user = await _get_user(session, message.from_user.id)
-        stats = await get_user_stats(session, user)
-        if stats["total"] == 0:
-            await message.answer(NO_STATS, reply_markup=back_kb("home"), parse_mode="HTML")
-            return
-        text = STATS_TEXT.format(
-            today=stats["today"], yesterday=stats["yesterday"],
-            week=stats["week"], month=stats["month"], total=stats["total"],
-            active_chats=stats["active_chats"], keywords=stats["keywords"],
-            stopwords=stats["stopwords"], notifications=stats["notifications"],
-            processed_today=stats["processed_today"],
-        )
-    await message.answer(text, reply_markup=back_kb("home"), parse_mode="HTML")
-
-
-@router.message(F.text == BTN_HELP)
-async def reply_help(message: Message):
-    await message.answer(HELP_TEXT, reply_markup=help_kb(), parse_mode="HTML")
+@router.message(F.text == BTN_SETTINGS)
+async def reply_settings(message: Message):
+    await message.answer(SETTINGS_TEXT, reply_markup=settings_kb(), parse_mode="HTML")
 
 
 @router.message(F.text == BTN_PROFILE)
@@ -434,12 +234,45 @@ async def reply_profile(message: Message):
     await message.answer(text, reply_markup=profile_kb(), parse_mode="HTML")
 
 
+@router.message(F.text == BTN_SUBSCRIBE)
+async def reply_subscribe(message: Message):
+    from app.services.users import DEFAULT_TARIFFS
+    t = "Доступные тарифы:\n\n" + "\n\n".join(
+        f"<b>{info['name']}</b>\nСтоимость: {info['price']} \u20bd / {info['days']} дней\nКлючевых слов: {info['keywords']}"
+        for info in DEFAULT_TARIFFS.values()
+    )
+    await message.answer(t, reply_markup=subscription_kb(), parse_mode="HTML")
+
+
+@router.message(F.text == BTN_HELP)
+async def reply_help(message: Message):
+    await message.answer(HELP_TEXT, reply_markup=help_kb(), parse_mode="HTML")
+
+
 @router.message(F.text == BTN_ADMIN)
 async def reply_admin(message: Message):
     if not is_admin(message.from_user.id):
         await message.answer("Доступ запрещён")
         return
     await message.answer(ADMIN_PANEL, reply_markup=admin_kb(), parse_mode="HTML")
+
+
+async def _open_category_search(user_id: int, message: Message):
+    SEARCH_MODE[user_id] = True
+    async with AsyncSessionLocal() as session:
+        user = await _get_user(session, user_id)
+        cats = (user.settings or {}).get("categories", []) if user.settings else []
+    text = (
+        "<b>Категории</b>\n\n"
+        "Нажимай на категории, чтобы выбрать/убрать.\n"
+        "Выбрано: " + (", ".join(cats) if cats else "все") + "\n\n"
+        "Когда готов — жми «Сохранить выбор»"
+    )
+    await message.answer(
+        text,
+        reply_markup=user_categories_kb(cats),
+        parse_mode="HTML",
+    )
 
 
 # ============ ПОИСК: callback-шаги ============

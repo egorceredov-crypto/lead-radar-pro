@@ -12,10 +12,11 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 def main_reply_kb() -> ReplyKeyboardMarkup:
     """Компактная основная навигация — крупные кнопки снизу."""
     kb = [
-        [KeyboardButton(text="/search")],
-        [KeyboardButton(text="/results"), KeyboardButton(text="/keywords")],
-        [KeyboardButton(text="/profile"), KeyboardButton(text="/subscribe")],
-        [KeyboardButton(text="/help")],
+        [KeyboardButton(text="➕ Добавить слово")],
+        [KeyboardButton(text="Найденные лиды"), KeyboardButton(text="Категории")],
+        [KeyboardButton(text="Запустить поиск"), KeyboardButton(text="Настройки")],
+        [KeyboardButton(text="Профиль"), KeyboardButton(text="Подписка")],
+        [KeyboardButton(text="Помощь")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
@@ -24,10 +25,11 @@ def admin_reply_kb() -> ReplyKeyboardMarkup:
     """Админская нижняя навигация."""
     kb = [
         [KeyboardButton(text="/admin")],
-        [KeyboardButton(text="/search")],
-        [KeyboardButton(text="/results"), KeyboardButton(text="/keywords")],
-        [KeyboardButton(text="/profile"), KeyboardButton(text="/subscribe")],
-        [KeyboardButton(text="/help")],
+        [KeyboardButton(text="➕ Добавить слово")],
+        [KeyboardButton(text="Найденные лиды"), KeyboardButton(text="Категории")],
+        [KeyboardButton(text="Запустить поиск"), KeyboardButton(text="Настройки")],
+        [KeyboardButton(text="Профиль"), KeyboardButton(text="Подписка")],
+        [KeyboardButton(text="Помощь")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
