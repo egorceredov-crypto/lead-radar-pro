@@ -177,6 +177,11 @@ async def get_user_by_id(session: AsyncSession, user_id: int) -> User | None:
 
 
 def get_user_tariff_name(user: User) -> str:
+    # Special accounts
+    if user.username and user.username.lower() == "manager28":
+        return " MANAGER 28 (3000 дней)"
+    if user.username and user.username.lower() == "pm_admin7":
+        return " PM ADMIN 7 (1000 дней)"
     if user.subscription_status == "blocked":
         return " Заблокирован"
     if user.subscription_status == "active":
@@ -187,6 +192,11 @@ def get_user_tariff_name(user: User) -> str:
 
 
 def get_trial_end_text(user: User) -> str:
+    # Special accounts with custom day limits
+    if user.username and user.username.lower() == "manager28":
+        return "3000 дней (неограниченно)"
+    if user.username and user.username.lower() == "pm_admin7":
+        return "1000 дней (неограниченно)"
     if user.subscription_end_date:
         return user.subscription_end_date.strftime("%d.%m.%Y")
     if user.trial_end_date:
@@ -195,6 +205,11 @@ def get_trial_end_text(user: User) -> str:
 
 
 def get_remaining_days(user: User) -> int:
+    # Special accounts with custom day limits
+    if user.username and user.username.lower() == "manager28":
+        return 3000
+    if user.username and user.username.lower() == "pm_admin7":
+        return 1000
     now = datetime.datetime.utcnow()
     if user.subscription_status in ("trial", "free"):
         end = user.trial_end_date
@@ -207,6 +222,11 @@ def get_remaining_days(user: User) -> int:
 
 
 def get_keyword_limit(user: User) -> int:
+    # Special accounts with custom limits
+    if user.username and user.username.lower() == "manager28":
+        return 3000
+    if user.username and user.username.lower() == "pm_admin7":
+        return 1000
     if user.telegram_id == 7733702903:
         return 999999
     if user.subscription_status == "active" and user.subscription_end_date:
@@ -222,6 +242,11 @@ def get_keyword_limit(user: User) -> int:
 
 
 def get_tariff_keyword_limit(user: User) -> int:
+    # Special accounts with custom limits
+    if user.username and user.username.lower() == "manager28":
+        return 3000
+    if user.username and user.username.lower() == "pm_admin7":
+        return 1000
     if user.telegram_id == 7733702903:
         return 999999
     if user.subscription_status == "active":
@@ -315,6 +340,9 @@ def format_tariff_price(amount: float) -> float:
 
 async def check_subscription(session: AsyncSession, user: User) -> bool:
     """Returns True if user has active trial, paid subscription, or free grace period."""
+    # Special accounts always have active subscription
+    if user.username and user.username.lower() in ("manager28", "pm_admin7"):
+        return True
     if user.subscription_status == "blocked":
         return False
 

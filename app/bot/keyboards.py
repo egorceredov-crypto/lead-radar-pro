@@ -63,7 +63,7 @@ def results_kb() -> InlineKeyboardMarkup:
 
 def categories_menu_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="Выбрать категории", callback_data="cat:select")
+    kb.button(text="📂 Категории", callback_data="cat:select")
     kb.button(text="Добавить свою", callback_data="cat:add")
     kb.button(text="Удалить свою", callback_data="cat:del")
     kb.button(text="Главная", callback_data="home")
@@ -90,7 +90,7 @@ def user_categories_kb(selected: list[str]) -> InlineKeyboardMarkup:
 def keywords_menu_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="Список слов", callback_data="kw:list")
-    kb.button(text="Добавить слово", callback_data="kw:add")
+    kb.button(text="🔑 Добавить слово", callback_data="kw:add")
     kb.button(text="Удалить слово", callback_data="kw:del_menu")
     kb.button(text="Стоп-слова", callback_data="kw:stop")
     kb.button(text="Импорт слов", callback_data="kw:import")
@@ -165,7 +165,7 @@ def profile_kb() -> InlineKeyboardMarkup:
 def referral_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="Показать ссылку", callback_data="ref:link")
-    kb.button(text="Профиль", callback_data="prof:menu")
+    kb.button(text="👤 Профиль", callback_data="prof:menu")
     kb.adjust(1)
     return kb.as_markup()
 
